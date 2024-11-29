@@ -316,6 +316,23 @@ func (cs *CommandSet) DeriveKey(path string) error {
 }
 
 func (cs *CommandSet) ExportKey(derive bool, makeCurrent bool, onlyPublic bool, path string) ([]byte, []byte, error) {
+	var p2 uint8
+	if onlyPublic {
+		p2 = P2ExportKeyPublicOnly
+	} else {
+		p2 = P2ExportKeyPrivateAndPublic
+	}
+
+	key, err := cs.ExportKeyExtended(derive, makeCurrent, p2, path)
+
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return key.PrivKey(), key.PubKey(), err
+}
+
+func (cs *CommandSet) ExportKeyExtended(derive bool, makeCurrent bool, p2 uint8, path string) (*types.ExportedKey, error) {
 	var p1 uint8
 	if !derive {
 		p1 = P1ExportKeyCurrent
@@ -324,22 +341,16 @@ func (cs *CommandSet) ExportKey(derive bool, makeCurrent bool, onlyPublic bool, 
 	} else {
 		p1 = P1ExportKeyDeriveAndMakeCurrent
 	}
-	var p2 uint8
-	if onlyPublic {
-		p2 = P2ExportKeyPublicOnly
-	} else {
-		p2 = P2ExportKeyPrivateAndPublic
-	}
 
 	cmd, err := NewCommandExportKey(p1, p2, path)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	resp, err := cs.sc.Send(cmd)
 	err = cs.checkOK(resp, err)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	return types.ParseExportKeyResponse(resp.Data)
