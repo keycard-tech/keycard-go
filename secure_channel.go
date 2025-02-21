@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"crypto/ecdsa"
 	"errors"
+	"sync"
 
 	ethcrypto "github.com/ethereum/go-ethereum/crypto"
+
 	"github.com/status-im/keycard-go/apdu"
 	"github.com/status-im/keycard-go/crypto"
 	"github.com/status-im/keycard-go/globalplatform"
@@ -23,11 +25,13 @@ type SecureChannel struct {
 	encKey    []byte
 	macKey    []byte
 	iv        []byte
+	mutex     sync.Mutex
 }
 
 func NewSecureChannel(c types.Channel) *SecureChannel {
 	return &SecureChannel{
-		c: c,
+		c:     c,
+		mutex: sync.Mutex{},
 	}
 }
 
@@ -53,6 +57,9 @@ func (sc *SecureChannel) Reset() {
 }
 
 func (sc *SecureChannel) Init(iv, encKey, macKey []byte) {
+	sc.mutex.Lock()
+	defer sc.mutex.Unlock()
+
 	sc.iv = iv
 	sc.encKey = encKey
 	sc.macKey = macKey
@@ -73,6 +80,9 @@ func (sc *SecureChannel) RawPublicKey() []byte {
 
 func (sc *SecureChannel) Send(cmd *apdu.Command) (*apdu.Response, error) {
 	if sc.open {
+		sc.mutex.Lock()
+		defer sc.mutex.Unlock()
+
 		encData, err := crypto.EncryptData(cmd.Data, sc.encKey, sc.iv)
 		if err != nil {
 			return nil, err
