@@ -156,6 +156,15 @@ func (sc *SecureChannelV1) OneShotEncrypt(secrets *Secrets) ([]byte, error) {
 	return crypto.OneShotEncrypt(pubKeyData, sc.secret, data)
 }
 
+// encryptedInitPayload encrypts raw init data (PIN || PUK || shared_secret || extensions)
+// using the ECDH shared secret for the INIT command.
+//
+// This is used by InitWithSecret/InitV2 for V1 cards.
+func (sc *SecureChannelV1) encryptedInitPayload(data []byte) ([]byte, error) {
+	pubKeyData := ethcrypto.FromECDSAPub(sc.publicKey)
+	return crypto.OneShotEncrypt(pubKeyData, sc.secret, data)
+}
+
 // IsOpen returns true if the session is currently active.
 func (sc *SecureChannelV1) IsOpen() bool {
 	return sc.open

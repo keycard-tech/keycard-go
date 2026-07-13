@@ -180,6 +180,32 @@ func NewCommandLoadSeed(seed []byte) *apdu.Command {
 	)
 }
 
+// NewCommandLoadLEEKey builds a LOAD KEY command for LEE mode (P1 = 0x04).
+func NewCommandLoadLEEKey(seed []byte) *apdu.Command {
+	return apdu.NewCommand(
+		globalplatform.ClaGp,
+		InsLoadKey,
+		P1LoadKeyLEE,
+		0,
+		seed,
+	)
+}
+
+// NewCommandLoadKeyBIP32 builds a LOAD KEY command with a BIP32 keypair TLV.
+func NewCommandLoadKeyBIP32(includePublic bool, keyTLV []byte) *apdu.Command {
+	p1 := uint8(P1LoadKeyEC)
+	if includePublic {
+		p1 = P1LoadKeyECExtended
+	}
+	return apdu.NewCommand(
+		globalplatform.ClaGp,
+		InsLoadKey,
+		p1,
+		0,
+		keyTLV,
+	)
+}
+
 func NewCommandDeriveKey(pathStr string) (*apdu.Command, error) {
 	startingPoint, path, err := derivationpath.Decode(pathStr)
 	if err != nil {
@@ -244,6 +270,28 @@ func NewCommandExportKey(p1 uint8, p2 uint8, pathStr string) (*apdu.Command, err
 		p2,
 		data.Bytes(),
 	), nil
+}
+
+// NewCommandExportLEE builds an EXPORT LEE command.
+func NewCommandExportLEE(source uint8, path []byte) *apdu.Command {
+	return apdu.NewCommand(
+		globalplatform.ClaGp,
+		InsExportLEE,
+		source,
+		0,
+		path,
+	)
+}
+
+// NewCommandExportBIP85 builds an EXPORT BIP85 command.
+func NewCommandExportBIP85(length uint8, path []byte) *apdu.Command {
+	return apdu.NewCommand(
+		globalplatform.ClaGp,
+		InsExportBIP85,
+		length,
+		0,
+		path,
+	)
 }
 
 func NewCommandSetPinlessPath(pathStr string) (*apdu.Command, error) {
@@ -319,6 +367,29 @@ func NewCommandStoreData(typ uint8, data []byte) *apdu.Command {
 		typ,
 		0,
 		data,
+	)
+}
+
+// NewCommandStoreDataWithOffset builds a STORE DATA command with an explicit offset.
+// Offset must be a multiple of 4; P1 encodes offset/4.
+func NewCommandStoreDataWithOffset(typ uint8, data []byte, offset uint16) *apdu.Command {
+	return apdu.NewCommand(
+		globalplatform.ClaGp,
+		InsStoreData,
+		typ,
+		byte(offset/4),
+		data,
+	)
+}
+
+// NewCommandGetChallenge builds a GET CHALLENGE command.
+func NewCommandGetChallenge(length uint8) *apdu.Command {
+	return apdu.NewCommand(
+		globalplatform.ClaGp,
+		InsGetChallenge,
+		length,
+		0,
+		[]byte{},
 	)
 }
 
