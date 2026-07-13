@@ -36,7 +36,7 @@ func (e *WrongPUKError) Error() string {
 
 type CommandSet struct {
 	c               types.Channel
-	sc              *SecureChannel
+	sc              *SecureChannelV1
 	ApplicationInfo *types.ApplicationInfo
 	PairingInfo     *types.PairingInfo
 }
@@ -172,9 +172,18 @@ func (cs *CommandSet) Identify() ([]byte, error) {
 
 func (cs *CommandSet) OpenSecureChannel() error {
 	if cs.ApplicationInfo == nil {
-		return errors.New("cannot open secure channel without setting PairingInfo")
+		return errors.New("cannot open secure channel without application info")
+	}
+	if cs.PairingInfo == nil {
+		return errors.New("cannot open secure channel without pairing info")
 	}
 
+	// Set pairing on the secure channel so it can derive session keys.
+	var pairingKey [32]byte
+	copy(pairingKey[:], cs.PairingInfo.Key)
+	cs.sc.SetPairing(types.NewPairing(pairingKey, uint8(cs.PairingInfo.Index)))
+
+	// Send OPEN_SECURE_CHANNEL and derive keys from response.
 	cmd := NewCommandOpenSecureChannel(uint8(cs.PairingInfo.Index), cs.sc.RawPublicKey())
 	resp, err := cs.c.Send(cmd)
 	if err = cs.checkOK(resp, err); err != nil {

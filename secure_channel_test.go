@@ -6,6 +6,7 @@ import (
 
 	"github.com/status-im/keycard-go/apdu"
 	"github.com/status-im/keycard-go/hexutils"
+	"github.com/status-im/keycard-go/types"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -18,9 +19,9 @@ func (fc *fakeChannel) Send(cmd *apdu.Command) (*apdu.Response, error) {
 	return nil, errors.New("test error")
 }
 
-func TestSecureChannel_Send(t *testing.T) {
+func TestSecureChannelV1_Send(t *testing.T) {
 	c := &fakeChannel{}
-	sc := &SecureChannel{
+	sc := &SecureChannelV1{
 		c:      c,
 		encKey: hexutils.HexToBytes("FDBCB1637597CF3F8F5E8263007D4E45F64C12D44066D4576EB1443D60AEF441"),
 		macKey: hexutils.HexToBytes("2FB70219E6635EE0958AB3F7A428BA87E8CD6E6F873A5725A55F25B102D0F1F7"),
@@ -38,4 +39,30 @@ func TestSecureChannel_Send(t *testing.T) {
 
 	expectedIV := "BA796BF8FAD1FD50407B87127B94F502"
 	assert.Equal(t, expectedIV, hexutils.BytesToHex(sc.iv))
+}
+
+func TestSecureChannelV1_Version(t *testing.T) {
+	sc := NewSecureChannel(nil)
+	assert.Equal(t, VersionV1, sc.Version())
+}
+
+func TestSecureChannelV1_IsOpen(t *testing.T) {
+	sc := NewSecureChannel(nil)
+	assert.False(t, sc.IsOpen())
+
+	sc.open = true
+	assert.True(t, sc.IsOpen())
+
+	sc.Reset()
+	assert.False(t, sc.IsOpen())
+}
+
+func TestSecureChannelV1_Pairing(t *testing.T) {
+	sc := NewSecureChannel(nil)
+	assert.Nil(t, sc.Pairing())
+
+	pairing := types.NewPairing([32]byte{1, 2, 3}, 5)
+	sc.SetPairing(pairing)
+	assert.Equal(t, pairing, sc.Pairing())
+	assert.Equal(t, uint8(5), sc.Pairing().Index())
 }

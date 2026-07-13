@@ -84,3 +84,44 @@ func TestRemovePadding(t *testing.T) {
 		assert.Equal(t, s.expected, hexutils.BytesToHex(res))
 	}
 }
+
+func TestCalculateMAC(t *testing.T) {
+	macKey := hexutils.HexToBytes("2FB70219E6635EE0958AB3F7A428BA87E8CD6E6F873A5725A55F25B102D0F1F7")
+	meta := hexutils.HexToBytes("00000000000000000000000000000000")
+	data := hexutils.HexToBytes("D545A5E95963B6BCED86A6AE826D34C5E06AC64A1217EFFA1415A96674A82500")
+
+	mac, err := CalculateMAC(meta, data, macKey)
+	assert.NoError(t, err)
+	assert.Len(t, mac, 16)
+}
+
+func TestCalculateMAC_MatchesLegacy(t *testing.T) {
+	// Verify that CalculateMAC produces the same result as the legacy
+	// CalculateMac for the test vector used in TestSecureChannelV1_Send.
+	// The legacy function modifies its inputs in-place, so we pass copies.
+	macKey := hexutils.HexToBytes("2FB70219E6635EE0958AB3F7A428BA87E8CD6E6F873A5725A55F25B102D0F1F7")
+	meta := hexutils.HexToBytes("00000000000000000000000000000000")
+	data := hexutils.HexToBytes("D545A5E95963B6BCED86A6AE826D34C5E06AC64A1217EFFA1415A96674A82500")
+
+	// Legacy (modifies inputs)
+	metaLegacy := make([]byte, len(meta))
+	dataLegacy := make([]byte, len(data))
+	copy(metaLegacy, meta)
+	copy(dataLegacy, data)
+	macLegacy, err := CalculateMac(metaLegacy, dataLegacy, macKey)
+	assert.NoError(t, err)
+
+	// New (non-mutating)
+	macNew, err := CalculateMAC(meta, data, macKey)
+	assert.NoError(t, err)
+
+	assert.Equal(t, macLegacy, macNew, "CalculateMAC should match legacy CalculateMac")
+}
+
+func TestConstantTimeCompare(t *testing.T) {
+	assert.True(t, ConstantTimeCompare([]byte{1, 2, 3}, []byte{1, 2, 3}))
+	assert.False(t, ConstantTimeCompare([]byte{1, 2, 3}, []byte{1, 2, 4}))
+	assert.False(t, ConstantTimeCompare([]byte{1, 2}, []byte{1, 2, 3}))
+	assert.True(t, ConstantTimeCompare(nil, nil))
+	assert.False(t, ConstantTimeCompare(nil, []byte{0}))
+}
