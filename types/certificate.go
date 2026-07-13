@@ -36,6 +36,18 @@ func ParseCertificate(data []byte) (*Certificate, error) {
 	}, nil
 }
 
+// IdentPub returns the card's identity public key as a 33-byte compressed key.
+func (c *Certificate) IdentPub() [33]byte {
+	var pub [33]byte
+	copy(pub[:], c.identPub)
+	return pub
+}
+
+// CAPublicKey returns the recovered CA public key (compressed, 33 bytes).
+func (c *Certificate) CAPublicKey() []byte {
+	return c.signature.PubKey()
+}
+
 func VerifyIdentity(challenge []byte, tlvData []byte) ([]byte, error) {
 	template, err := apdu.FindTag(tlvData, apdu.Tag{TagSignatureTemplate})
 	if err != nil {

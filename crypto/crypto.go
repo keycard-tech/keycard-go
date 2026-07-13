@@ -144,3 +144,15 @@ func removePadding(blockSize int, data []byte) []byte {
 
 	return data[:i]
 }
+
+// ============================================================================
+// Memory zeroization
+// ============================================================================
+
+// Zeroize overwrites every byte of the given slice with zeros.
+// It is intended for clearing sensitive material from memory.
+func Zeroize(data []byte) {
+	for i := range data {
+		data[i] = 0
+	}
+}

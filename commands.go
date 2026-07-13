@@ -10,59 +10,6 @@ import (
 	"github.com/status-im/keycard-go/globalplatform"
 )
 
-const (
-	InsInit                 = 0xFE
-	InsFactoryReset         = 0xFD
-	InsOpenSecureChannel    = 0x10
-	InsMutuallyAuthenticate = 0x11
-	InsPair                 = 0x12
-	InsUnpair               = 0x13
-	InsIdentify             = 0x14
-	InsGetStatus            = 0xF2
-	InsGenerateKey          = 0xD4
-	InsRemoveKey            = 0xD3
-	InsVerifyPIN            = 0x20
-	InsChangePIN            = 0x21
-	InsUnblockPIN           = 0x22
-	InsDeriveKey            = 0xD1
-	InsExportKey            = 0xC2
-	InsSign                 = 0xC0
-	InsSetPinlessPath       = 0xC1
-	InsGetData              = 0xCA
-	InsLoadKey              = 0xD0
-	InsGenerateMnemonic     = 0xD2
-	InsStoreData            = 0xE2
-
-	P1PairingFirstStep              = 0x00
-	P1PairingFinalStep              = 0x01
-	P1GetStatusApplication          = 0x00
-	P1GetStatusKeyPath              = 0x01
-	P1DeriveKeyFromMaster           = 0x00
-	P1DeriveKeyFromParent           = 0x40
-	P1DeriveKeyFromCurrent          = 0x80
-	P1ChangePinPIN                  = 0x00
-	P1ChangePinPUK                  = 0x01
-	P1ChangePinPairingSecret        = 0x02
-	P1SignCurrentKey                = 0x00
-	P1SignDerive                    = 0x01
-	P1SignDeriveAndMakeCurrent      = 0x02
-	P1SignPinless                   = 0x03
-	P1StoreDataPublic               = 0x00
-	P1StoreDataNDEF                 = 0x01
-	P1StoreDataCash                 = 0x02
-	P1ExportKeyCurrent              = 0x00
-	P1ExportKeyDerive               = 0x01
-	P1ExportKeyDeriveAndMakeCurrent = 0x02
-	P2ExportKeyPrivateAndPublic     = 0x00
-	P2ExportKeyPublicOnly           = 0x01
-	P2ExportKeyExtendedPublic       = 0x02
-	P1LoadKeySeed                   = 0x03
-	P1FactoryResetMagic             = 0xAA
-	P2FactoryResetMagic             = 0x55
-
-	SwNoAvailablePairingSlots = 0x6A84
-)
-
 func NewCommandInit(data []byte) *apdu.Command {
 	return apdu.NewCommand(
 		globalplatform.ClaGp,
