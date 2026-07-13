@@ -2,20 +2,26 @@ package types
 
 import (
 	"bytes"
-	"container/list"
 	"errors"
-	"io"
+	"fmt"
 
-	"github.com/status-im/keycard-go/apdu"
+	"github.com/status-im/keycard-go/tlv"
+)
+
+const (
+	// MaxWalletRangeCount is the upper bound on a single encoded wallet range's count.
+	MaxWalletRangeCount = 100000
+	// MaxTotalWallets is the upper bound on the total number of wallet IDs across all ranges.
+	MaxTotalWallets = 100000
 )
 
 type Metadata struct {
-	name  string
-	paths *list.List
+	name    string
+	wallets []uint64
 }
 
 func EmptyMetadata() *Metadata {
-	return &Metadata{"", list.New()}
+	return &Metadata{"", nil}
 }
 
 func NewMetadata(name string, paths []uint32) (*Metadata, error) {
@@ -26,74 +32,65 @@ func NewMetadata(name string, paths []uint32) (*Metadata, error) {
 	}
 
 	for i := 0; i < len(paths); i++ {
-		m.AddPath(paths[i])
+		m.AddWallet(uint64(paths[i]))
 	}
 
 	return m, nil
 }
 
 func ParseMetadata(data []byte) (*Metadata, error) {
-	buf := bytes.NewBuffer(data)
-	header, err := buf.ReadByte()
-
-	if err != nil {
-		return nil, err
+	if len(data) == 0 {
+		return nil, errors.New("empty metadata data")
 	}
 
+	header := data[0]
 	version := header >> 5
 
 	if version != 1 {
-		return nil, errors.New("invalid version")
+		return nil, fmt.Errorf("invalid metadata version: %d", version)
 	}
 
-	namelen := int(header & 0x1f)
-	cardName := string(buf.Next(namelen))
+	nameLen := int(header & 0x1F)
+	off := 1
 
-	list := list.New()
+	if off+nameLen > len(data) {
+		return nil, errors.New("metadata data too short for card name")
+	}
 
-	for {
-		start, err := apdu.ParseLength(buf)
+	cardName := string(data[off : off+nameLen])
+	off += nameLen
 
-		if err == io.EOF {
-			break
-		} else if err != nil {
-			return nil, err
-		}
+	var wallets []uint64
+	var totalInserted uint64
 
-		count, err := apdu.ParseLength(buf)
-
+	for off < len(data) {
+		start, nextOff, err := tlv.DecodeBerLength(data, off)
 		if err != nil {
 			return nil, err
 		}
+		off = nextOff
 
-		for i := start; i <= (start + count); i++ {
-			insertOrderedNoDups(list, i)
+		count, nextOff, err := tlv.DecodeBerLength(data, off)
+		if err != nil {
+			return nil, err
+		}
+		off = nextOff
+
+		if count > MaxWalletRangeCount {
+			return nil, fmt.Errorf("wallet range count too large: %d (max %d)", count, MaxWalletRangeCount)
+		}
+
+		totalInserted += uint64(count) + 1
+		if totalInserted > MaxTotalWallets {
+			return nil, fmt.Errorf("Total wallet count too large: %d (max %d)", totalInserted, MaxTotalWallets)
+		}
+
+		for i := uint64(0); i <= uint64(count); i++ {
+			wallets = append(wallets, uint64(start)+i)
 		}
 	}
 
-	return &Metadata{cardName, list}, nil
-}
-
-func insertOrderedNoDups(list *list.List, num uint32) {
-	le := list.Back()
-
-	for le != nil {
-		val := le.Value.(uint32)
-
-		if num > val {
-			break
-		} else if num == val {
-			return
-		}
-
-		le = le.Prev()
-	}
-
-	if le == nil {
-		list.PushFront(num)
-	} else {
-		list.InsertAfter(num, le)
-	}
+	return &Metadata{cardName, wallets}, nil
 }
 
 func (m *Metadata) Name() string {
@@ -109,30 +106,77 @@ func (m *Metadata) SetName(name string) error {
 	return nil
 }
 
+// Wallets returns the set of wallet IDs.
+func (m *Metadata) Wallets() []uint64 {
+	return m.wallets
+}
+
+// Paths returns the set of wallet IDs as uint32 for backwards compatibility.
+// Deprecated: use Wallets() instead.
 func (m *Metadata) Paths() []uint32 {
-	listlen := m.paths.Len()
-	paths := make([]uint32, listlen)
-	e := m.paths.Front()
-
-	for i := 0; i < listlen; i++ {
-		paths[i] = e.Value.(uint32)
-		e = e.Next()
+	paths := make([]uint32, len(m.wallets))
+	for i, w := range m.wallets {
+		paths[i] = uint32(w)
 	}
-
 	return paths
 }
 
-func (m *Metadata) AddPath(path uint32) {
-	insertOrderedNoDups(m.paths, path)
+// AddWallet adds a wallet ID.
+func (m *Metadata) AddWallet(id uint64) {
+	// Insert in sorted order, no duplicates
+	idx := sortInsertPos(m.wallets, id)
+	if idx < len(m.wallets) && m.wallets[idx] == id {
+		return // already present
+	}
+	m.wallets = append(m.wallets, 0)
+	copy(m.wallets[idx+1:], m.wallets[idx:])
+	m.wallets[idx] = id
 }
 
+// AddPath adds a wallet ID for backwards compatibility.
+// Deprecated: use AddWallet() instead.
+func (m *Metadata) AddPath(path uint32) {
+	m.AddWallet(uint64(path))
+}
+
+// RemoveWallet removes a wallet ID.
+func (m *Metadata) RemoveWallet(id uint64) {
+	idx := sortSearchPos(m.wallets, id)
+	if idx < len(m.wallets) && m.wallets[idx] == id {
+		m.wallets = append(m.wallets[:idx], m.wallets[idx+1:]...)
+	}
+}
+
+// RemovePath removes a wallet ID for backwards compatibility.
+// Deprecated: use RemoveWallet() instead.
 func (m *Metadata) RemovePath(path uint32) {
-	for le := m.paths.Front(); le != nil; le = le.Next() {
-		if path == le.Value.(uint32) {
-			m.paths.Remove(le)
-			return
+	m.RemoveWallet(uint64(path))
+}
+
+func sortInsertPos(wallets []uint64, id uint64) int {
+	low, high := 0, len(wallets)
+	for low < high {
+		mid := (low + high) / 2
+		if wallets[mid] < id {
+			low = mid + 1
+		} else {
+			high = mid
 		}
 	}
+	return low
+}
+
+func sortSearchPos(wallets []uint64, id uint64) int {
+	low, high := 0, len(wallets)
+	for low < high {
+		mid := (low + high) / 2
+		if wallets[mid] < id {
+			low = mid + 1
+		} else {
+			high = mid
+		}
+	}
+	return low
 }
 
 func (m *Metadata) Serialize() []byte {
@@ -140,30 +184,36 @@ func (m *Metadata) Serialize() []byte {
 	buf.WriteByte(0x20 | byte(len(m.name)))
 	buf.WriteString(m.name)
 
-	le := m.paths.Front()
-
-	if le == nil {
+	if len(m.wallets) == 0 {
 		return buf.Bytes()
 	}
 
-	start := le.Value.(uint32)
-	len := uint32(0)
+	// Compress wallets into contiguous ranges
+	type rangeEntry struct {
+		start uint64
+		count uint64
+	}
+	var ranges []rangeEntry
+	start := m.wallets[0]
+	count := uint64(0)
 
-	for le = le.Next(); le != nil; le = le.Next() {
-		w := le.Value.(uint32)
-
-		if w == (start + len + 1) {
-			len++
+	for i := 1; i < len(m.wallets); i++ {
+		w := m.wallets[i]
+		if w == start+count+1 {
+			count++
 		} else {
-			apdu.WriteLength(buf, start)
-			apdu.WriteLength(buf, len)
+			ranges = append(ranges, rangeEntry{start, count})
+			count = 0
 			start = w
-			len = 0
 		}
 	}
+	ranges = append(ranges, rangeEntry{start, count})
 
-	apdu.WriteLength(buf, start)
-	apdu.WriteLength(buf, len)
+	// Encode ranges using BER length encoding
+	for _, r := range ranges {
+		buf.Write(tlv.EncodeBerLength(uint32(r.start)))
+		buf.Write(tlv.EncodeBerLength(uint32(r.count)))
+	}
 
 	return buf.Bytes()
 }
