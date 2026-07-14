@@ -1,8 +1,8 @@
 # keycard-go
 
-`keycard-go` is a set of Go packages for interacting with the [Status Keycard](https://github.com/status-im/status-keycard), a secure NFC-based hardware wallet.
+`keycard-go` is a set of Go packages for interacting with the [Status Keycard](https://github.com/keycard-tech/status-keycard), a secure NFC-based hardware wallet.
 
-If you only need a CLI tool to initialize your card, check out [keycard-cli](https://github.com/status-im/keycard-cli).
+If you only need a CLI tool to initialize your card, check out [keycard-cli](https://github.com/keycard-tech/keycard-cli).
 
 ## Packages
 
