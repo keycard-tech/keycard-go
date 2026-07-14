@@ -77,3 +77,21 @@ func (r *Response) deserialize(data []byte) error {
 func (r *Response) IsOK() bool {
 	return r.Sw == SwOK
 }
+
+// CheckOK returns an error if the response Sw code is not 0x9000.
+func (r *Response) CheckOK() error {
+	if r.Sw == SwOK {
+		return nil
+	}
+	return NewErrBadResponse(r.Sw, "unexpected status word")
+}
+
+// CheckSW returns an error if the response Sw code is not one of the accepted codes.
+func (r *Response) CheckSW(codes []uint16) error {
+	for _, code := range codes {
+		if r.Sw == code {
+			return nil
+		}
+	}
+	return NewErrBadResponse(r.Sw, fmt.Sprintf("expected one of %v, got 0x%04X", codes, r.Sw))
+}

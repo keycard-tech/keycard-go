@@ -1,16 +1,9 @@
 package types
 
 import (
-	"bytes"
-	"errors"
-
-	"github.com/status-im/keycard-go/apdu"
 	"github.com/status-im/keycard-go/derivationpath"
+	"github.com/status-im/keycard-go/tlv"
 )
-
-const hardenedStart = 0x80000000 // 2^31
-
-var ErrApplicationStatusTemplateNotFound = errors.New("application status template not found")
 
 type ApplicationStatus struct {
 	PinRetryCount  int
@@ -19,26 +12,34 @@ type ApplicationStatus struct {
 	Path           string
 }
 
+// ParseApplicationStatus parses the TLV response from a GET STATUS command.
 func ParseApplicationStatus(data []byte) (*ApplicationStatus, error) {
-	tpl, err := apdu.FindTag(data, apdu.Tag{TagApplicationStatusTemplate})
+	reader := tlv.NewBerTlvReader(data)
+
+	_, err := reader.EnterConstructed(tlv.TLV_APPLICATION_STATUS_TEMPLATE)
 	if err != nil {
+		// Fall back to key path status parsing
 		return parseKeyPathStatus(data)
 	}
 
 	appStatus := &ApplicationStatus{}
 
-	if pinRetryCount, err := apdu.FindTag(tpl, apdu.Tag{0x02}); err == nil && len(pinRetryCount) == 1 {
-		appStatus.PinRetryCount = int(pinRetryCount[0])
+	// PIN retry count (INTEGER)
+	pinRetryInt, err := reader.ReadInteger()
+	if err == nil {
+		appStatus.PinRetryCount = int(pinRetryInt)
 	}
 
-	if pukRetryCount, err := apdu.FindTagN(tpl, 1, apdu.Tag{0x02}); err == nil && len(pukRetryCount) == 1 {
-		appStatus.PUKRetryCount = int(pukRetryCount[0])
+	// PUK retry count (INTEGER)
+	pukRetryInt, err := reader.ReadInteger()
+	if err == nil {
+		appStatus.PUKRetryCount = int(pukRetryInt)
 	}
 
-	if keyInitialized, err := apdu.FindTag(tpl, apdu.Tag{0x01}); err == nil {
-		if bytes.Equal(keyInitialized, []byte{0xFF}) {
-			appStatus.KeyInitialized = true
-		}
+	// Key initialized (BOOLEAN)
+	keyInitialized, err := reader.ReadBoolean()
+	if err == nil {
+		appStatus.KeyInitialized = keyInitialized
 	}
 
 	return appStatus, nil

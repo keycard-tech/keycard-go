@@ -52,3 +52,9 @@ func (c *NormalChannel) Send(cmd *apdu.Command) (*apdu.Response, error) {
 
 	return apdu.ParseResponse(rawResp)
 }
+
+// IsConnected returns true if the underlying transmitter is available.
+// NormalChannel is always considered connected as long as a transmitter is set.
+func (c *NormalChannel) IsConnected() bool {
+	return c.t != nil
+}

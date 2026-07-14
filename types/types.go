@@ -7,7 +7,3 @@ type Channel interface {
 	Send(*apdu.Command) (*apdu.Response, error)
 }
 
-type PairingInfo struct {
-	Key   []byte
-	Index int
-}

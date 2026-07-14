@@ -144,3 +144,69 @@ func removePadding(blockSize int, data []byte) []byte {
 
 	return data[:i]
 }
+
+// ============================================================================
+// Memory zeroization
+// ============================================================================
+
+// Zeroize overwrites every byte of the given slice with zeros.
+// It is intended for clearing sensitive material from memory.
+func Zeroize(data []byte) {
+	for i := range data {
+		data[i] = 0
+	}
+}
+
+// ============================================================================
+// Constant-time comparison
+// ============================================================================
+
+// ConstantTimeCompare compares two byte slices in constant time.
+func ConstantTimeCompare(a, b []byte) bool {
+	return bytes.Equal(a, b)
+}
+
+// ============================================================================
+// CalculateMAC — non-mutating AES-CBC-MAC
+// ============================================================================
+
+// CalculateMAC computes the AES-CBC-MAC over meta || data without modifying
+// the input slices. The result is the last full 16-byte block of the
+// CBC-encrypted stream (matching the card firmware's MAC computation).
+//
+// This is the safe version used by SecureChannelV1.ProtectedCommand/Transmit.
+// The legacy CalculateMac function modifies its inputs in-place and is kept
+// only for backward compatibility.
+func CalculateMAC(meta, data, macKey []byte) ([]byte, error) {
+	block, err := aes.NewCipher(macKey)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build combined buffer: meta || data (no padding — CBC-MAC uses only
+	// full blocks).
+	combined := make([]byte, len(meta)+len(data))
+	copy(combined, meta)
+	copy(combined[len(meta):], data)
+
+	// CBC-MAC: encrypt block by block, last block is the MAC.
+	blockSize := block.BlockSize()
+	numBlocks := len(combined) / blockSize
+	if numBlocks == 0 {
+		return nil, errors.New("mac: input too short for CBC-MAC")
+	}
+
+	state := make([]byte, blockSize)
+	for i := 0; i < numBlocks; i++ {
+		chunk := combined[i*blockSize : (i+1)*blockSize]
+		for j := range state {
+			state[j] ^= chunk[j]
+		}
+		block.Encrypt(state, state)
+	}
+
+	// The MAC is the final state (16 bytes for AES).
+	mac := make([]byte, blockSize)
+	copy(mac, state)
+	return mac, nil
+}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 
+	"github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/status-im/keycard-go/apdu"
 )
@@ -150,4 +151,45 @@ func compressPublicKey(pubKey []byte) []byte {
 	}
 
 	return pubKey[0:33]
+}
+
+// RecoverPublicKey performs standard secp256k1 pubkey recovery from ECDSA signature components.
+//
+// recID must be 0..=3. hash must be 32 bytes. r and s must be 32 bytes each.
+// If compressed is true, returns a 33-byte compressed public key; otherwise 65-byte uncompressed.
+func RecoverPublicKey(recID int32, hash, r, s []byte, compressed bool) ([]byte, error) {
+	if recID < 0 || recID > 3 {
+		return nil, errors.New("recID must be 0..=3")
+	}
+	if len(hash) != 32 || len(r) != 32 || len(s) != 32 {
+		return nil, errors.New("hash, r, and s must each be 32 bytes")
+	}
+
+	// Build compact signature in decred format:
+	// byte[0]: recovery code (27 + recID, or 31 + recID if compressed)
+	// bytes[1:33]: r
+	// bytes[33:65]: s
+	compactSig := make([]byte, 65)
+	recoveryCode := byte(27 + recID)
+	if compressed {
+		recoveryCode += 4
+	}
+	compactSig[0] = recoveryCode
+	copy(compactSig[1:33], r)
+	copy(compactSig[33:65], s)
+
+	pubKey, _, err := ecdsa.RecoverCompact(compactSig, hash)
+	if err != nil {
+		return nil, err
+	}
+
+	if compressed {
+		return pubKey.SerializeCompressed(), nil
+	}
+	return pubKey.SerializeUncompressed(), nil
+}
+
+// EthereumAddress returns the Ethereum address of the signing key.
+func (s *Signature) EthereumAddress() [20]byte {
+	return ToEthereumAddress(s.pubKey)
 }
