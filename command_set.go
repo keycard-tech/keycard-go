@@ -43,7 +43,6 @@ type CommandSet struct {
 	c               types.Channel
 	sc              SecureChannel
 	ApplicationInfo *types.ApplicationInfo
-	PairingInfo     *types.PairingInfo // legacy, kept for backward compatibility
 	caPublicKeys    [][33]byte
 	whitelistedKeys [][33]byte
 }
@@ -69,16 +68,6 @@ func NewCommandSetWithCAs(c types.Channel, caPublicKeys, whitelistedCardKeys [][
 		ApplicationInfo: &types.ApplicationInfo{},
 		caPublicKeys:    caPublicKeys,
 		whitelistedKeys: whitelistedCardKeys,
-	}
-}
-
-// SetPairingInfo sets the legacy pairing info.
-//
-// Deprecated: use SetPairing instead.
-func (cs *CommandSet) SetPairingInfo(key []byte, index int) {
-	cs.PairingInfo = &types.PairingInfo{
-		Key:   key,
-		Index: index,
 	}
 }
 
@@ -288,10 +277,9 @@ func (cs *CommandSet) Pair(pairingPass string) error {
 	pairingKey := h.Sum(nil)
 	pairingIndex := resp.Data[0]
 
-	cs.PairingInfo = &types.PairingInfo{
-		Key:   pairingKey,
-		Index: int(pairingIndex),
-	}
+	var keyArr [32]byte
+	copy(keyArr[:], pairingKey)
+	cs.sc.SetPairing(types.NewPairing(keyArr, pairingIndex))
 
 	return nil
 }
@@ -311,14 +299,6 @@ func (cs *CommandSet) AutoPairWithSecret(sharedSecret []byte) error {
 func (cs *CommandSet) AutoPairWithSecretAndMode(sharedSecret []byte, mode uint8) error {
 	if err := cs.sc.AutoPair(cs.c, mode, sharedSecret); err != nil {
 		return err
-	}
-	pairing := cs.sc.Pairing()
-	if pairing != nil {
-		keyArr := pairing.Key()
-		cs.PairingInfo = &types.PairingInfo{
-			Key:   keyArr[:],
-			Index: int(pairing.Index()),
-		}
 	}
 	return nil
 }
@@ -356,9 +336,6 @@ func (cs *CommandSet) OpenSecureChannel() error {
 	if cs.ApplicationInfo == nil {
 		return errors.New("cannot open secure channel without application info")
 	}
-	if cs.PairingInfo == nil {
-		return errors.New("cannot open secure channel without pairing info")
-	}
 
 	// V1 flow
 	scV1, ok := cs.sc.(*SecureChannelV1)
@@ -366,17 +343,19 @@ func (cs *CommandSet) OpenSecureChannel() error {
 		return errors.New("OpenSecureChannel is for V1 cards; use AutoOpenSecureChannel for V2")
 	}
 
-	var pairingKey [32]byte
-	copy(pairingKey[:], cs.PairingInfo.Key)
-	scV1.SetPairing(types.NewPairing(pairingKey, uint8(cs.PairingInfo.Index)))
+	pairing := cs.sc.Pairing()
+	if pairing == nil {
+		return errors.New("cannot open secure channel without pairing")
+	}
 
-	cmd := NewCommandOpenSecureChannel(uint8(cs.PairingInfo.Index), scV1.RawPublicKey())
+	cmd := NewCommandOpenSecureChannel(pairing.Index(), scV1.RawPublicKey())
 	resp, err := cs.c.Send(cmd)
 	if err = cs.checkOK(resp, err); err != nil {
 		return err
 	}
 
-	encKey, macKey, iv := crypto.DeriveSessionKeys(scV1.Secret(), cs.PairingInfo.Key, resp.Data)
+	pairingKey := pairing.Key()
+	encKey, macKey, iv := crypto.DeriveSessionKeys(scV1.Secret(), pairingKey[:], resp.Data)
 	scV1.Init(iv, encKey, macKey)
 
 	err = cs.mutualAuthenticate()

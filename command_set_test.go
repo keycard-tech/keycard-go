@@ -79,11 +79,15 @@ func TestCommandSet_PairingPasswordToSecret(t *testing.T) {
 	assert.Equal(t, 32, len(secret1), "secret should be 32 bytes")
 }
 
-func TestCommandSet_SetPairingInfo(t *testing.T) {
+func TestCommandSet_SetPairing(t *testing.T) {
 	cs := NewCommandSet(nil)
-	cs.SetPairingInfo([]byte{1, 2, 3}, 5)
-	assert.NotNil(t, cs.PairingInfo)
-	assert.Equal(t, 5, cs.PairingInfo.Index)
+	cs.sc = NewSecureChannel(nil) // V1 for pairing
+	key := [32]byte{1, 2, 3}
+	cs.SetPairing(types.NewPairing(key, 5))
+	pairing := cs.Pairing()
+	assert.NotNil(t, pairing)
+	assert.Equal(t, uint8(5), pairing.Index())
+	assert.Equal(t, key, pairing.Key())
 }
 
 func TestParseMnemonicResponse(t *testing.T) {
