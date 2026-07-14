@@ -12,185 +12,58 @@ import (
 )
 
 // ============================================================================
-// AES-CCM mode implementation (RFC 3610, RFC 5116)
+// AES-CCM mode implementation (T=8, L=13, no AAD)
+//
+// Used by Secure Channel V2. The card firmware uses a non-standard CCM
+// flags encoding (0x19 instead of RFC 3610's 0x11 for T=8, L=2).
+// See: docs/secure-channel-ccm-security-review.md
 // ============================================================================
+
+const (
+	ccmFlagsByte   = 0x19 // F=0, M=3, T=8, L=1, Q=2 (per card firmware spec)
+	ctrFlagsByte   = 0x01 // CTR mode flags byte (per card firmware)
+	ccmNonceLen    = 13
+	ccmTagLen      = 8
+	ccmMessageLenF = 2 // 15 - nonceLen = 2 bytes for message length in B0
+)
 
 // CcmMode implements AES-CCM (Counter with CBC-MAC) authenticated encryption.
 type CcmMode struct {
-	block    cipher.Block
-	nonceLen int
-	tagLen   int
+	block cipher.Block
 }
 
 // NewCCM creates a new AES-CCM mode instance.
-// nonceLen must be 7..13 (inclusive), tagLen must be 4, 6, 8, 12, or 16.
-func NewCCM(block cipher.Block, nonceLen, tagLen int) (*CcmMode, error) {
-	if nonceLen < 7 || nonceLen > 13 {
-		return nil, fmt.Errorf("ccm: invalid nonce length %d (must be 7..13)", nonceLen)
-	}
-	if tagLen != 4 && tagLen != 6 && tagLen != 8 && tagLen != 12 && tagLen != 16 {
-		return nil, fmt.Errorf("ccm: invalid tag length %d (must be 4, 6, 8, 12, or 16)", tagLen)
-	}
-	return &CcmMode{
-		block:    block,
-		nonceLen: nonceLen,
-		tagLen:   tagLen,
-	}, nil
+func NewCCM(block cipher.Block) *CcmMode {
+	return &CcmMode{block: block}
 }
 
-// EncryptAndAuthenticate encrypts plaintext and returns ciphertext with authentication tag appended.
-// The output is ciphertext || tag.
-func (c *CcmMode) EncryptAndAuthenticate(nonce, plaintext, aad []byte) ([]byte, error) {
-	if len(nonce) != c.nonceLen {
-		return nil, fmt.Errorf("ccm: nonce length %d != expected %d", len(nonce), c.nonceLen)
-	}
-	if len(plaintext) > 0xFFFE {
-		return nil, errors.New("ccm: plaintext too long (>65534 bytes)")
-	}
-
-	m := 15 - c.nonceLen // length field size in bytes
-
-	// Build the first CCM block (B0)
-	flag := byte(0)
-	if len(aad) > 0 {
-		flag |= 1 << 6 // A-data flag
-	}
-	flag |= byte(c.tagLen/2 - 2) << 3 // M (tag length)
-	flag |= byte(m - 1)               // L (length field size - 1)
-
+// buildB0 builds the first CCM block (B0): [Flags | Nonce(13) | MessageLen(2)]
+func buildB0(nonce []byte, msgLen int) []byte {
 	b0 := make([]byte, 16)
-	b0[0] = flag
-	copy(b0[1:1+c.nonceLen], nonce)
-	// Encode plaintext length as big-endian m-byte integer
-	for i := 0; i < m; i++ {
-		b0[1+c.nonceLen+i] = byte(len(plaintext) >> (8 * (m - 1 - i)))
-	}
-
-	// Compute CBC-MAC
-	tag, err := c.computeCBCMAC(aad, plaintext, b0)
-	if err != nil {
-		return nil, err
-	}
-
-	// Encrypt with CTR mode
-	ciphertext := make([]byte, len(plaintext))
-	if len(plaintext) > 0 {
-		ctrBlock := make([]byte, 16)
-		copy(ctrBlock[:c.nonceLen], nonce)
-		ctrBlock[15] = 1 // Counter starts at 1
-
-		counter := cipher.NewCTR(c.block, ctrBlock)
-		counter.XORKeyStream(ciphertext, plaintext)
-	}
-
-	// Append tag
-	result := append(ciphertext, tag...)
-	return result, nil
+	b0[0] = ccmFlagsByte
+	copy(b0[1:1+ccmNonceLen], nonce)
+	b0[1+ccmNonceLen] = byte(msgLen >> 8)
+	b0[1+ccmNonceLen+1] = byte(msgLen)
+	return b0
 }
 
-// DecryptAndAuthenticate decrypts ciphertext and verifies the authentication tag.
-// The input is ciphertext || tag.
-func (c *CcmMode) DecryptAndAuthenticate(nonce, ciphertextWithTag, aad []byte) ([]byte, error) {
-	if len(nonce) != c.nonceLen {
-		return nil, fmt.Errorf("ccm: nonce length %d != expected %d", len(nonce), c.nonceLen)
-	}
-	if len(ciphertextWithTag) < c.tagLen {
-		return nil, errors.New("ccm: ciphertext too short")
-	}
-
-	ciphertext := ciphertextWithTag[:len(ciphertextWithTag)-c.tagLen]
-	receivedTag := ciphertextWithTag[len(ciphertextWithTag)-c.tagLen:]
-
-	m := 15 - c.nonceLen
-
-	// Decrypt with CTR mode first to recover plaintext
-	plaintext := make([]byte, len(ciphertext))
-	if len(ciphertext) > 0 {
-		ctrBlock := make([]byte, 16)
-		copy(ctrBlock[:c.nonceLen], nonce)
-		ctrBlock[15] = 1
-
-		counter := cipher.NewCTR(c.block, ctrBlock)
-		counter.XORKeyStream(plaintext, ciphertext)
-	}
-
-	// Build the first CCM block (B0) for MAC verification over plaintext
-	flag := byte(0)
-	if len(aad) > 0 {
-		flag |= 1 << 6
-	}
-	flag |= byte(c.tagLen/2 - 2) << 3
-	flag |= byte(m - 1)
-
-	b0 := make([]byte, 16)
-	b0[0] = flag
-	copy(b0[1:1+c.nonceLen], nonce)
-	// Encode plaintext length as big-endian m-byte integer
-	for i := 0; i < m; i++ {
-		b0[1+c.nonceLen+i] = byte(len(plaintext) >> (8 * (m - 1 - i)))
-	}
-
-	// Compute expected MAC over the recovered plaintext
-	expectedTag, err := c.computeCBCMAC(aad, plaintext, b0)
-	if err != nil {
-		return nil, err
-	}
-
-	// Verify tag (constant-time comparison)
-	if !hmac.Equal(receivedTag, expectedTag) {
-		return nil, errors.New("ccm: authentication failed")
-	}
-
-	return plaintext, nil
+// buildCtrBlock builds a CCM counter block: [CTR_Flags | Nonce(13) | Counter(2)]
+func buildCtrBlock(nonce []byte, counter uint16) []byte {
+	block := make([]byte, 16)
+	block[0] = ctrFlagsByte
+	copy(block[1:1+ccmNonceLen], nonce)
+	block[14] = byte(counter >> 8)
+	block[15] = byte(counter)
+	return block
 }
 
-// computeCBCMAC computes the CBC-MAC for CCM mode.
-func (c *CcmMode) computeCBCMAC(aad, data []byte, b0 []byte) ([]byte, error) {
+// computeCBCMAC computes the CBC-MAC for CCM mode over data blocks.
+// No AAD is processed.
+func (c *CcmMode) computeCBCMAC(data []byte, b0 []byte) []byte {
 	// Start with B0
 	block := make([]byte, 16)
 	copy(block, b0)
 	c.block.Encrypt(block, block)
-
-	// Process AAD (padded to 16-byte blocks)
-	if len(aad) > 0 {
-		aadLenBytes := make([]byte, 4)
-		if len(aad) < 0x10000 {
-			aadLenBytes[2] = byte(len(aad) >> 8)
-			aadLenBytes[3] = byte(len(aad))
-		} else {
-			aadLenBytes[0] = 0xFF
-			aadLenBytes[1] = 0xFE
-			aadLenBytes[2] = byte(len(aad) >> 8)
-			aadLenBytes[3] = byte(len(aad))
-		}
-
-		// Process full 16-byte AAD blocks
-		for len(aad) >= 16 {
-			for i := 0; i < 16; i++ {
-				block[i] ^= aad[i]
-			}
-			c.block.Encrypt(block, block)
-			aad = aad[16:]
-		}
-
-		// Process remaining AAD bytes + length encoding in final block
-		aadBlock := make([]byte, 16)
-		copy(aadBlock, aad)
-		// Append AAD length encoding at the end of the block
-		remaining := len(aadBlock) - len(aad)
-		if remaining <= 4 {
-			// Length fits in remaining space at end of block
-			copy(aadBlock[len(aad):], aadLenBytes[4-remaining:])
-		} else {
-			// More than 4 bytes remaining; length goes in last 4 bytes
-			copy(aadBlock[len(aadBlock)-4:], aadLenBytes)
-		}
-
-		for i := 0; i < 16; i++ {
-			block[i] ^= aadBlock[i]
-		}
-		c.block.Encrypt(block, block)
-	}
 
 	// Process data blocks
 	if len(data) > 0 {
@@ -212,7 +85,90 @@ func (c *CcmMode) computeCBCMAC(aad, data []byte, b0 []byte) ([]byte, error) {
 	}
 
 	// Tag is the first tagLen bytes of the final block
-	return block[:c.tagLen], nil
+	return block[:ccmTagLen]
+}
+
+// ctrCrypt builds a CTR stream starting at counter=0 and XORs it with data.
+// When data is laid out as [tag | payload], counter 0 encrypts/decrypts the
+// tag and counters 1..N encrypt/decrypt the payload — matching the card's
+// aesCcmCtrCrypt behaviour in a single pass.
+func (c *CcmMode) ctrCrypt(nonce, data []byte) {
+	ctrBlock := buildCtrBlock(nonce, 0)
+	counter := cipher.NewCTR(c.block, ctrBlock)
+	counter.XORKeyStream(data, data)
+}
+
+// EncryptAndAuthenticate encrypts plaintext and returns ciphertext with
+// authentication tag appended. The output is ciphertext || tag (8 bytes).
+// No AAD is supported.
+func (c *CcmMode) EncryptAndAuthenticate(nonce, plaintext []byte) ([]byte, error) {
+	if len(nonce) != ccmNonceLen {
+		return nil, fmt.Errorf("ccm: nonce length %d != expected %d", len(nonce), ccmNonceLen)
+	}
+	if len(plaintext) > 0xFFFE {
+		return nil, errors.New("ccm: plaintext too long (>65534 bytes)")
+	}
+
+	// Build the first CCM block (B0): [Flags | Nonce(13) | MessageLen(2)]
+	b0 := buildB0(nonce, len(plaintext))
+
+	// Compute CBC-MAC over plaintext
+	tag := c.computeCBCMAC(plaintext, b0)
+
+	// Encrypt tag and plaintext in a single CTR pass.
+	// Layout: [tag(8) | pad(8) | plaintext] — counter 0 encrypts the tag (padded to 16),
+	// counters 1..N encrypt the data. This matches the card's aesCcmCtrCrypt.
+	buf := make([]byte, 16+len(plaintext))
+	copy(buf[:ccmTagLen], tag)
+	// bytes 8..15 are zero (padding)
+	copy(buf[16:], plaintext)
+	c.ctrCrypt(nonce, buf)
+
+	// Rearrange to [ciphertext | encrypted_tag]
+	result := make([]byte, len(plaintext)+ccmTagLen)
+	copy(result, buf[16:])                // ciphertext
+	copy(result[len(plaintext):], buf[:ccmTagLen]) // encrypted tag
+	return result, nil
+}
+
+// DecryptAndAuthenticate decrypts ciphertext and verifies the authentication
+// tag. The input is ciphertext || tag (8 bytes). No AAD is supported.
+func (c *CcmMode) DecryptAndAuthenticate(nonce, ciphertextWithTag []byte) ([]byte, error) {
+	if len(nonce) != ccmNonceLen {
+		return nil, fmt.Errorf("ccm: nonce length %d != expected %d", len(nonce), ccmNonceLen)
+	}
+	if len(ciphertextWithTag) < ccmTagLen {
+		return nil, errors.New("ccm: ciphertext too short")
+	}
+
+	ciphertext := ciphertextWithTag[:len(ciphertextWithTag)-ccmTagLen]
+	tag := ciphertextWithTag[len(ciphertextWithTag)-ccmTagLen:]
+
+	// Decrypt tag and ciphertext in a single CTR pass.
+	// Layout: [tag(8) | pad(8) | ciphertext] — counter 0 decrypts the tag (padded to 16),
+	// counters 1..N decrypt the data.
+	buf := make([]byte, 16+len(ciphertext))
+	copy(buf[:ccmTagLen], tag)
+	// bytes 8..15 are zero (padding)
+	copy(buf[16:], ciphertext)
+	c.ctrCrypt(nonce, buf)
+
+	// Extract decrypted tag and plaintext
+	decryptedTag := buf[:ccmTagLen]
+	plaintext := buf[16:]
+
+	// Build the first CCM block (B0) for MAC verification over plaintext
+	b0 := buildB0(nonce, len(plaintext))
+
+	// Compute expected MAC over the recovered plaintext
+	expectedTag := c.computeCBCMAC(plaintext, b0)
+
+	// Verify tag (constant-time comparison)
+	if !hmac.Equal(decryptedTag, expectedTag) {
+		return nil, errors.New("ccm: authentication failed")
+	}
+
+	return plaintext, nil
 }
 
 // ============================================================================
@@ -235,12 +191,8 @@ func AESCCMEncrypt(key, nonce, plaintext []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	ccm, err := NewCCM(block, 13, 8)
-	if err != nil {
-		return nil, err
-	}
-
-	return ccm.EncryptAndAuthenticate(nonce, plaintext, nil)
+	ccm := NewCCM(block)
+	return ccm.EncryptAndAuthenticate(nonce, plaintext)
 }
 
 // AESCCMDecrypt decrypts ciphertext with AES-128-CCM.
@@ -259,12 +211,8 @@ func AESCCMDecrypt(key, nonce, ciphertextWithTag []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	ccm, err := NewCCM(block, 13, 8)
-	if err != nil {
-		return nil, err
-	}
-
-	return ccm.DecryptAndAuthenticate(nonce, ciphertextWithTag, nil)
+	ccm := NewCCM(block)
+	return ccm.DecryptAndAuthenticate(nonce, ciphertextWithTag)
 }
 
 // ============================================================================

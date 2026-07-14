@@ -20,38 +20,8 @@ func TestNewCCM_Valid(t *testing.T) {
 	block, err := aes.NewCipher(key)
 	require.NoError(t, err)
 
-	// Valid nonce lengths: 7..13
-	for nonceLen := 7; nonceLen <= 13; nonceLen++ {
-		for _, tagLen := range []int{4, 6, 8, 12, 16} {
-			ccm, err := NewCCM(block, nonceLen, tagLen)
-			require.NoError(t, err, "nonceLen=%d, tagLen=%d", nonceLen, tagLen)
-			assert.NotNil(t, ccm)
-			assert.Equal(t, nonceLen, ccm.nonceLen)
-			assert.Equal(t, tagLen, ccm.tagLen)
-		}
-	}
-}
-
-func TestNewCCM_InvalidNonceLength(t *testing.T) {
-	key := make([]byte, 16)
-	block, _ := aes.NewCipher(key)
-
-	for _, nonceLen := range []int{0, 1, 6, 14, 16} {
-		_, err := NewCCM(block, nonceLen, 8)
-		assert.Error(t, err, "nonceLen=%d should fail", nonceLen)
-		assert.Contains(t, err.Error(), "invalid nonce length")
-	}
-}
-
-func TestNewCCM_InvalidTagLength(t *testing.T) {
-	key := make([]byte, 16)
-	block, _ := aes.NewCipher(key)
-
-	for _, tagLen := range []int{0, 1, 2, 3, 5, 7, 10, 15, 20} {
-		_, err := NewCCM(block, 13, tagLen)
-		assert.Error(t, err, "tagLen=%d should fail", tagLen)
-		assert.Contains(t, err.Error(), "invalid tag length")
-	}
+	ccm := NewCCM(block)
+	assert.NotNil(t, ccm)
 }
 
 // ============================================================================
@@ -66,38 +36,21 @@ func TestCCM_RoundTrip(t *testing.T) {
 	block, err := aes.NewCipher(key)
 	require.NoError(t, err)
 
-	testCases := []struct {
-		name     string
-		nonceLen int
-		tagLen   int
-	}{
-		{"nonce13_tag4", 13, 4},
-		{"nonce13_tag8", 13, 8},
-		{"nonce13_tag16", 13, 16},
-		{"nonce13_tag12", 13, 12},
+	ccm := NewCCM(block)
+	nonce := make([]byte, ccmNonceLen)
+	for i := range nonce {
+		nonce[i] = byte(i + 1)
 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			ccm, err := NewCCM(block, tc.nonceLen, tc.tagLen)
-			require.NoError(t, err)
+	plaintext := []byte("Hello, AES-CCM world! This is a test message.")
 
-			nonce := make([]byte, tc.nonceLen)
-			for i := range nonce {
-				nonce[i] = byte(i + 1)
-			}
+	ciphertext, err := ccm.EncryptAndAuthenticate(nonce, plaintext)
+	require.NoError(t, err)
+	assert.Equal(t, len(plaintext)+ccmTagLen, len(ciphertext))
 
-			plaintext := []byte("Hello, AES-CCM world! This is a test message.")
-
-			ciphertext, err := ccm.EncryptAndAuthenticate(nonce, plaintext, nil)
-			require.NoError(t, err)
-			assert.Equal(t, len(plaintext)+tc.tagLen, len(ciphertext))
-
-			decrypted, err := ccm.DecryptAndAuthenticate(nonce, ciphertext, nil)
-			require.NoError(t, err)
-			assert.Equal(t, plaintext, decrypted)
-		})
-	}
+	decrypted, err := ccm.DecryptAndAuthenticate(nonce, ciphertext)
+	require.NoError(t, err)
+	assert.Equal(t, plaintext, decrypted)
 }
 
 func TestCCM_RoundTrip_EmptyPlaintext(t *testing.T) {
@@ -108,66 +61,17 @@ func TestCCM_RoundTrip_EmptyPlaintext(t *testing.T) {
 	block, err := aes.NewCipher(key)
 	require.NoError(t, err)
 
-	ccm, err := NewCCM(block, 13, 8)
-	require.NoError(t, err)
-
-	nonce := make([]byte, 13)
+	ccm := NewCCM(block)
+	nonce := make([]byte, ccmNonceLen)
 	plaintext := []byte{}
 
-	ciphertext, err := ccm.EncryptAndAuthenticate(nonce, plaintext, nil)
+	ciphertext, err := ccm.EncryptAndAuthenticate(nonce, plaintext)
 	require.NoError(t, err)
-	assert.Equal(t, 8, len(ciphertext)) // only tag
+	assert.Equal(t, ccmTagLen, len(ciphertext)) // only tag
 
-	decrypted, err := ccm.DecryptAndAuthenticate(nonce, ciphertext, nil)
+	decrypted, err := ccm.DecryptAndAuthenticate(nonce, ciphertext)
 	require.NoError(t, err)
 	assert.Empty(t, decrypted)
-}
-
-func TestCCM_RoundTrip_WithAAD(t *testing.T) {
-	key := make([]byte, 16)
-	for i := range key {
-		key[i] = byte(i)
-	}
-	block, err := aes.NewCipher(key)
-	require.NoError(t, err)
-
-	ccm, err := NewCCM(block, 13, 8)
-	require.NoError(t, err)
-
-	nonce := make([]byte, 13)
-	plaintext := []byte("Secret message")
-	aad := []byte("Additional authenticated data")
-
-	ciphertext, err := ccm.EncryptAndAuthenticate(nonce, plaintext, aad)
-	require.NoError(t, err)
-
-	decrypted, err := ccm.DecryptAndAuthenticate(nonce, ciphertext, aad)
-	require.NoError(t, err)
-	assert.Equal(t, plaintext, decrypted)
-}
-
-func TestCCM_Authentication_FailsWithWrongAAD(t *testing.T) {
-	key := make([]byte, 16)
-	for i := range key {
-		key[i] = byte(i)
-	}
-	block, err := aes.NewCipher(key)
-	require.NoError(t, err)
-
-	ccm, err := NewCCM(block, 13, 8)
-	require.NoError(t, err)
-
-	nonce := make([]byte, 13)
-	plaintext := []byte("Secret message")
-	aad := []byte("Correct AAD")
-	wrongAAD := []byte("Wrong AAD")
-
-	ciphertext, err := ccm.EncryptAndAuthenticate(nonce, plaintext, aad)
-	require.NoError(t, err)
-
-	_, err = ccm.DecryptAndAuthenticate(nonce, ciphertext, wrongAAD)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "authentication failed")
 }
 
 func TestCCM_Authentication_FailsWithTamperedCiphertext(t *testing.T) {
@@ -178,19 +82,17 @@ func TestCCM_Authentication_FailsWithTamperedCiphertext(t *testing.T) {
 	block, err := aes.NewCipher(key)
 	require.NoError(t, err)
 
-	ccm, err := NewCCM(block, 13, 8)
-	require.NoError(t, err)
-
-	nonce := make([]byte, 13)
+	ccm := NewCCM(block)
+	nonce := make([]byte, ccmNonceLen)
 	plaintext := []byte("Secret message")
 
-	ciphertext, err := ccm.EncryptAndAuthenticate(nonce, plaintext, nil)
+	ciphertext, err := ccm.EncryptAndAuthenticate(nonce, plaintext)
 	require.NoError(t, err)
 
 	// Tamper with a byte in the ciphertext (not the tag)
 	ciphertext[0] ^= 0xFF
 
-	_, err = ccm.DecryptAndAuthenticate(nonce, ciphertext, nil)
+	_, err = ccm.DecryptAndAuthenticate(nonce, ciphertext)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "authentication failed")
 }
@@ -203,18 +105,16 @@ func TestCCM_Authentication_FailsWithWrongNonce(t *testing.T) {
 	block, err := aes.NewCipher(key)
 	require.NoError(t, err)
 
-	ccm, err := NewCCM(block, 13, 8)
-	require.NoError(t, err)
-
-	nonce := make([]byte, 13)
-	wrongNonce := make([]byte, 13)
+	ccm := NewCCM(block)
+	nonce := make([]byte, ccmNonceLen)
+	wrongNonce := make([]byte, ccmNonceLen)
 	wrongNonce[0] = 0xFF
 	plaintext := []byte("Secret message")
 
-	ciphertext, err := ccm.EncryptAndAuthenticate(nonce, plaintext, nil)
+	ciphertext, err := ccm.EncryptAndAuthenticate(nonce, plaintext)
 	require.NoError(t, err)
 
-	_, err = ccm.DecryptAndAuthenticate(wrongNonce, ciphertext, nil)
+	_, err = ccm.DecryptAndAuthenticate(wrongNonce, ciphertext)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "authentication failed")
 }
@@ -222,36 +122,34 @@ func TestCCM_Authentication_FailsWithWrongNonce(t *testing.T) {
 func TestCCM_InvalidNonceLength(t *testing.T) {
 	key := make([]byte, 16)
 	block, _ := aes.NewCipher(key)
-	ccm, err := NewCCM(block, 13, 8)
-	require.NoError(t, err)
+	ccm := NewCCM(block)
 
 	plaintext := []byte("test")
 	shortNonce := make([]byte, 12)
 	longNonce := make([]byte, 14)
 
-	_, err = ccm.EncryptAndAuthenticate(shortNonce, plaintext, nil)
+	_, err := ccm.EncryptAndAuthenticate(shortNonce, plaintext)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "nonce length")
 
-	_, err = ccm.EncryptAndAuthenticate(longNonce, plaintext, nil)
+	_, err = ccm.EncryptAndAuthenticate(longNonce, plaintext)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "nonce length")
 
-	ciphertext, _ := ccm.EncryptAndAuthenticate(make([]byte, 13), plaintext, nil)
-	_, err = ccm.DecryptAndAuthenticate(shortNonce, ciphertext, nil)
+	ciphertext, _ := ccm.EncryptAndAuthenticate(make([]byte, ccmNonceLen), plaintext)
+	_, err = ccm.DecryptAndAuthenticate(shortNonce, ciphertext)
 	assert.Error(t, err)
 }
 
 func TestCCM_PlaintextTooLong(t *testing.T) {
 	key := make([]byte, 16)
 	block, _ := aes.NewCipher(key)
-	ccm, err := NewCCM(block, 13, 8)
-	require.NoError(t, err)
+	ccm := NewCCM(block)
 
-	nonce := make([]byte, 13)
+	nonce := make([]byte, ccmNonceLen)
 	plaintext := make([]byte, 0xFFFE+1) // 65535 bytes, exceeds max
 
-	_, err = ccm.EncryptAndAuthenticate(nonce, plaintext, nil)
+	_, err := ccm.EncryptAndAuthenticate(nonce, plaintext)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "too long")
 }
@@ -259,13 +157,12 @@ func TestCCM_PlaintextTooLong(t *testing.T) {
 func TestCCM_CiphertextTooShort(t *testing.T) {
 	key := make([]byte, 16)
 	block, _ := aes.NewCipher(key)
-	ccm, err := NewCCM(block, 13, 8)
-	require.NoError(t, err)
+	ccm := NewCCM(block)
 
-	nonce := make([]byte, 13)
+	nonce := make([]byte, ccmNonceLen)
 	shortCiphertext := make([]byte, 4) // shorter than tag length
 
-	_, err = ccm.DecryptAndAuthenticate(nonce, shortCiphertext, nil)
+	_, err := ccm.DecryptAndAuthenticate(nonce, shortCiphertext)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "too short")
 }
@@ -278,19 +175,17 @@ func TestCCM_LargePlaintext(t *testing.T) {
 	block, err := aes.NewCipher(key)
 	require.NoError(t, err)
 
-	ccm, err := NewCCM(block, 13, 8)
-	require.NoError(t, err)
-
-	nonce := make([]byte, 13)
+	ccm := NewCCM(block)
+	nonce := make([]byte, ccmNonceLen)
 	plaintext := make([]byte, 1024)
 	for i := range plaintext {
 		plaintext[i] = byte(i % 256)
 	}
 
-	ciphertext, err := ccm.EncryptAndAuthenticate(nonce, plaintext, nil)
+	ciphertext, err := ccm.EncryptAndAuthenticate(nonce, plaintext)
 	require.NoError(t, err)
 
-	decrypted, err := ccm.DecryptAndAuthenticate(nonce, ciphertext, nil)
+	decrypted, err := ccm.DecryptAndAuthenticate(nonce, ciphertext)
 	require.NoError(t, err)
 	assert.Equal(t, plaintext, decrypted)
 }

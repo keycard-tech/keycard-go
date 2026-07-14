@@ -40,12 +40,10 @@ const (
 type SecureChannelV2 struct {
 	caPublicKeys         [][33]byte // trusted CA keys
 	whitelistedCardKeys  [][33]byte // optional card whitelist
-	keyH2C               []byte     // client→card AES key (nil until established)
-	keyC2H               []byte     // card→client AES key (nil until established)
+	keyH2C               []byte     // client->card AES key (nil until open)
+	keyC2H               []byte     // card->client AES key (nil until open)
 	nonceCounter         [13]byte   // big-endian counter
-	pendingDecryptNonce  *[13]byte  // nonce for in-flight response
 	open                 bool
-	established          bool
 	cardIdentPub         *[33]byte  // card identity public key
 	clientEphPrivKey     *ecdsa.PrivateKey
 }
@@ -124,10 +122,8 @@ func (sc *SecureChannelV2) isCardWhitelisted(identPub *[33]byte) bool {
 
 func (sc *SecureChannelV2) Reset() {
 	sc.open = false
-	sc.established = false
 	sc.zeroizeKeys()
 	sc.nonceCounter = [13]byte{}
-	sc.pendingDecryptNonce = nil
 	sc.cardIdentPub = nil
 	sc.clientEphPrivKey = nil
 }
@@ -244,9 +240,6 @@ func (sc *SecureChannelV2) Unpair(_ types.Channel, _ uint8) (*apdu.Response, err
 // If the channel was previously established but is now closed, returns an error.
 func (sc *SecureChannelV2) ProtectedCommand(cla, ins, p1, p2 uint8, data []byte) (*apdu.Command, error) {
 	if !sc.open {
-		if sc.established {
-			return nil, errors.New("secure channel was closed after an error; call AutoOpen again before sending protected commands")
-		}
 		return apdu.NewCommand(cla, ins, p1, p2, data), nil
 	}
 
@@ -266,21 +259,11 @@ func (sc *SecureChannelV2) ProtectedCommand(cla, ins, p1, p2 uint8, data []byte)
 		return nil, fmt.Errorf("AES-CCM encryption failed: %w", err)
 	}
 
-	// Save the nonce that was just consumed so the matching response can
-	// be decrypted with it.
-	sc.pendingDecryptNonce = &sc.nonceCounter
-	sc.incrementNonce()
-
 	return apdu.NewCommand(globalplatform.ClaGp, InsSecuredAPDU, 0, 0, ciphertext), nil
 }
 
 // Transmit sends a command and decrypts the response.
 func (sc *SecureChannelV2) Transmit(ch types.Channel, cmd *apdu.Command) (*apdu.Response, error) {
-	// Whether or not this exchange succeeds, the nonce it used must
-	// never be handed to decryptCCM again — consume it now.
-	nonceForDecrypt := sc.pendingDecryptNonce
-	sc.pendingDecryptNonce = nil
-
 	resp, err := ch.Send(cmd)
 	if err != nil {
 		sc.open = false
@@ -296,17 +279,14 @@ func (sc *SecureChannelV2) Transmit(ch types.Channel, cmd *apdu.Command) (*apdu.
 		return resp, nil
 	}
 
-	if nonceForDecrypt == nil {
-		sc.open = false
-		return nil, errors.New("no pending nonce for decryption")
-	}
-
 	// Decrypt with AES-128-CCM
-	plaintext, err := sc.decryptCCM(resp.Data, nonceForDecrypt)
+	plaintext, err := sc.decryptCCM(resp.Data)
 	if err != nil {
 		sc.open = false
 		return nil, fmt.Errorf("AES-CCM decryption failed: %w", err)
 	}
+
+	sc.incrementNonce()
 
 	return apdu.ParseResponse(plaintext)
 }
@@ -353,7 +333,6 @@ func (sc *SecureChannelV2) processHandshakeResponse(salt []byte, clientEphPriv *
 	// Initialize nonce counter to zero
 	sc.nonceCounter = [13]byte{}
 	sc.open = true
-	sc.established = true
 
 	return nil
 }
@@ -517,12 +496,12 @@ func (sc *SecureChannelV2) encryptCCM(plaintext []byte) ([]byte, error) {
 
 // decryptCCM decrypts ciphertext with AES-128-CCM using the card-to-client key
 // and the given nonce.
-func (sc *SecureChannelV2) decryptCCM(ciphertext []byte, nonce *[13]byte) ([]byte, error) {
+func (sc *SecureChannelV2) decryptCCM(ciphertext []byte) ([]byte, error) {
 	if sc.keyC2H == nil {
 		return nil, errors.New("no card-to-client key available")
 	}
 
-	return crypto.AESCCMDecrypt(sc.keyC2H, nonce[:], ciphertext)
+	return crypto.AESCCMDecrypt(sc.keyC2H, sc.nonceCounter[:], ciphertext)
 }
 
 // incrementNonce increments the 13-byte nonce counter as a big-endian integer.

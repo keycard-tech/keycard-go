@@ -248,7 +248,6 @@ func TestSecureChannelV2_Reset(t *testing.T) {
 
 	// Manually set some state
 	sc.open = true
-	sc.established = true
 	sc.keyH2C = []byte("secret key")
 	sc.keyC2H = []byte("other key")
 	sc.nonceCounter = [13]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 42}
@@ -256,12 +255,10 @@ func TestSecureChannelV2_Reset(t *testing.T) {
 	sc.Reset()
 
 	assert.False(t, sc.open)
-	assert.False(t, sc.established)
 	assert.False(t, sc.IsOpen())
 	assert.Nil(t, sc.keyH2C)
 	assert.Nil(t, sc.keyC2H)
 	assert.Equal(t, [13]byte{}, sc.nonceCounter)
-	assert.Nil(t, sc.pendingDecryptNonce)
 	assert.Nil(t, sc.cardIdentPub)
 	assert.Nil(t, sc.clientEphPrivKey)
 }
@@ -270,7 +267,7 @@ func TestSecureChannelV2_Reset(t *testing.T) {
 // ProtectedCommand tests
 // ============================================================================
 
-func TestProtectedCommand_NotOpen_NotEstablished(t *testing.T) {
+func TestProtectedCommand_NotOpen(t *testing.T) {
 	sc := NewSecureChannelV2(nil, nil)
 
 	cmd, err := sc.ProtectedCommand(0x80, 0x01, 0x00, 0x00, []byte("data"))
@@ -280,16 +277,6 @@ func TestProtectedCommand_NotOpen_NotEstablished(t *testing.T) {
 	assert.Equal(t, uint8(0x80), cmd.Cla)
 	assert.Equal(t, uint8(0x01), cmd.Ins)
 	assert.Equal(t, []byte("data"), cmd.Data)
-}
-
-func TestProtectedCommand_NotOpen_Established(t *testing.T) {
-	sc := NewSecureChannelV2(nil, nil)
-	sc.established = true
-
-	cmd, err := sc.ProtectedCommand(0x80, 0x01, 0x00, 0x00, []byte("data"))
-	assert.Error(t, err)
-	assert.Nil(t, cmd)
-	assert.Contains(t, err.Error(), "closed after an error")
 }
 
 func TestProtectedCommand_Open_NoKeys(t *testing.T) {
@@ -320,8 +307,8 @@ func TestProtectedCommand_Open_WithKeys(t *testing.T) {
 	assert.Equal(t, uint8(InsSecuredAPDU), cmd.Ins)
 	assert.NotEqual(t, data, cmd.Data) // data is encrypted
 
-	// Nonce should have been incremented
-	assert.Equal(t, [13]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}, sc.nonceCounter)
+	// Nonce should have not been incremented yet
+	assert.Equal(t, [13]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, sc.nonceCounter)
 }
 
 func TestProtectedCommand_DataTooLarge(t *testing.T) {
@@ -379,21 +366,6 @@ func TestTransmit_NotOpen(t *testing.T) {
 	assert.NotNil(t, resp)
 }
 
-func TestTransmit_NoPendingNonce(t *testing.T) {
-	sc := NewSecureChannelV2(nil, nil)
-	sc.open = true
-	sc.pendingDecryptNonce = nil
-	ch := &mockChannel{
-		nextResponse: newMockOKResponse([]byte("data")),
-	}
-
-	cmd := apdu.NewCommand(0x80, 0x01, 0x00, 0x00, nil)
-	resp, err := sc.Transmit(ch, cmd)
-	assert.Error(t, err)
-	assert.Nil(t, resp)
-	assert.Contains(t, err.Error(), "no pending nonce")
-}
-
 func TestTransmit_SuccessfulDecrypt(t *testing.T) {
 	// Set up a secure channel with known keys
 	sc := NewSecureChannelV2(nil, nil)
@@ -409,7 +381,6 @@ func TestTransmit_SuccessfulDecrypt(t *testing.T) {
 
 	nonce := [13]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}
 	sc.nonceCounter = nonce
-	sc.pendingDecryptNonce = &nonce
 
 	// Build a valid encrypted response: inner APDU + status word, encrypted
 	innerData := []byte{0x80, 0x01, 0x00, 0x00, 0x03, 'a', 'b', 'c'} // command-like
@@ -436,7 +407,7 @@ func TestTransmit_DecryptFailure(t *testing.T) {
 	sc.keyC2H = make([]byte, 16)
 
 	nonce := [13]byte{}
-	sc.pendingDecryptNonce = &nonce
+	sc.nonceCounter = nonce
 
 	ch := &mockChannel{
 		nextResponse: newMockOKResponse([]byte("garbage")),
@@ -680,9 +651,8 @@ func TestEncryptCCM_NoKey(t *testing.T) {
 
 func TestDecryptCCM_NoKey(t *testing.T) {
 	sc := NewSecureChannelV2(nil, nil)
-	nonce := [13]byte{}
 
-	_, err := sc.decryptCCM([]byte("data"), &nonce)
+	_, err := sc.decryptCCM([]byte("data"))
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "no card-to-client key")
 }
@@ -705,7 +675,7 @@ func TestEncryptDecryptCCM_RoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEqual(t, plaintext, ciphertext)
 
-	decrypted, err := sc.decryptCCM(ciphertext, &nonce)
+	decrypted, err := sc.decryptCCM(ciphertext)
 	require.NoError(t, err)
 	assert.Equal(t, plaintext, decrypted)
 }

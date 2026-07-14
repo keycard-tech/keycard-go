@@ -170,8 +170,8 @@ func (cs *CommandSet) Init(secrets *Secrets) error {
 		return err
 	}
 	initData := cs.buildInitData(secrets.Pin(), secrets.Puk(), secrets.PairingToken(), nil, 0, 0)
-	_, err := cs.sendProtected(InsInit, 0, 0, initData)
-	return err
+	resp, err := cs.sendProtected(InsInit, 0, 0, initData)
+	return cs.checkOK(resp, err)
 }
 
 // InitWithSecret initializes the card with a raw shared secret.
@@ -202,8 +202,8 @@ func (cs *CommandSet) initWithSecret(pin string, altPin *string, puk string, sha
 		if err := cs.sc.AutoOpen(cs.c); err != nil {
 			return err
 		}
-		_, err := cs.sendProtected(InsInit, 0, 0, initData)
-		return err
+		resp, err := cs.sendProtected(InsInit, 0, 0, initData)
+		return cs.checkOK(resp, err)
 	}
 
 	// V1: use OneShotEncrypt
