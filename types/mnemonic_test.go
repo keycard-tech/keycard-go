@@ -86,3 +86,99 @@ func TestMnemonicFromIndicesInvalid(t *testing.T) {
 func TestBIP39EnglishWordlistSize(t *testing.T) {
 	assert.Equal(t, 2048, len(BIP39EnglishWordlist))
 }
+
+func TestValidateMnemonic(t *testing.T) {
+	tests := []struct {
+		name    string
+		phrase  string
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name:   "valid 12-word mnemonic (BIP39 test vector)",
+			phrase: "legal winner thank year wave sausage worth useful legal winner thank yellow",
+		},
+		{
+			name:   "valid 12-word mnemonic (all abandon except last)",
+			phrase: "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+		},
+		{
+			name:   "valid 24-word mnemonic (BIP39 test vector)",
+			phrase: "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art",
+		},
+		{
+			name:    "empty phrase",
+			phrase:  "",
+			wantErr: true,
+			errMsg:  "empty mnemonic phrase",
+		},
+		{
+			name:    "wrong word count (11 words)",
+			phrase:  "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon",
+			wantErr: true,
+			errMsg:  "invalid mnemonic length: 11 words",
+		},
+		{
+			name:    "invalid word",
+			phrase:  "legal winner thank year wave sausage worth useful legal winner thank invalid",
+			wantErr: true,
+			errMsg:  "invalid word at position 11",
+		},
+		{
+			name:    "checksum mismatch (changed last word)",
+			phrase:  "legal winner thank year wave sausage worth useful legal winner thank blue",
+			wantErr: true,
+			errMsg:  "checksum mismatch",
+		},
+		{
+			name:    "single word",
+			phrase:  "abandon",
+			wantErr: true,
+			errMsg:  "invalid mnemonic length",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateMnemonic(tt.phrase)
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errMsg != "" {
+					assert.Contains(t, err.Error(), tt.errMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestMnemonicValidate(t *testing.T) {
+	// Valid mnemonic via MnemonicFromPhrase
+	m, err := MnemonicFromPhrase("legal winner thank year wave sausage worth useful legal winner thank yellow")
+	require.NoError(t, err)
+	assert.NoError(t, m.Validate())
+
+	// Invalid: manually construct with wrong checksum
+	m2, err := MnemonicFromPhrase("legal winner thank year wave sausage worth useful legal winner thank blue")
+	require.NoError(t, err)
+	assert.Error(t, m2.Validate())
+}
+
+func TestMnemonicFromPhrase(t *testing.T) {
+	m, err := MnemonicFromPhrase("abandon ability able")
+	require.NoError(t, err)
+	words := m.Words()
+	require.Len(t, words, 3)
+	assert.Equal(t, "abandon", words[0])
+	assert.Equal(t, "ability", words[1])
+	assert.Equal(t, "able", words[2])
+}
+
+func TestMnemonicFromPhraseInvalid(t *testing.T) {
+	_, err := MnemonicFromPhrase("")
+	assert.Error(t, err)
+
+	_, err = MnemonicFromPhrase("notarealword")
+	assert.Error(t, err)
+}

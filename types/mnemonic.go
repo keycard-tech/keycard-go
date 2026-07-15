@@ -1,8 +1,11 @@
 package types
 
 import (
+	"crypto/sha256"
 	"crypto/sha512"
+	"errors"
 	"fmt"
+	"strings"
 
 	"golang.org/x/crypto/pbkdf2"
 )
@@ -2163,4 +2166,124 @@ func BinarySeedFromPhrase(phrase, password string) []byte {
 // Indexes returns the word indexes.
 func (m *Mnemonic) Indexes() []uint16 {
 	return m.indexes
+}
+
+// Validate checks that the mnemonic has a valid word count, all words are in the
+// wordlist, and the BIP39 checksum is correct.
+func (m *Mnemonic) Validate() error {
+	words := m.Words()
+	if len(words) == 0 {
+		return errors.New("mnemonic is empty")
+	}
+
+	// Valid word counts: 12, 15, 18, 21, 24
+	validLength := map[int]bool{12: true, 15: true, 18: true, 21: true, 24: true}
+	if !validLength[len(words)] {
+		return fmt.Errorf("invalid mnemonic length: %d words (expected 12, 15, 18, 21, or 24)", len(words))
+	}
+
+	// Build a set for O(1) lookups
+	wordSet := make(map[string]uint16, 2048)
+	for i, w := range *m.wordlist {
+		wordSet[w] = uint16(i)
+	}
+
+	// Verify each word and collect indices
+	indices := make([]uint16, len(words))
+	for i, w := range words {
+		idx, ok := wordSet[w]
+		if !ok {
+			return fmt.Errorf("invalid word at position %d: %q", i, w)
+		}
+		indices[i] = idx
+	}
+
+	// Verify BIP39 checksum
+	if !validateChecksum(indices, len(words)) {
+		return errors.New("mnemonic checksum mismatch")
+	}
+
+	return nil
+}
+
+// validateChecksum verifies the BIP39 checksum encoded in the mnemonic indices.
+// Each word encodes 11 bits. The entropy is all bits except the last checksumLen bits.
+// The checksum is the first checksumLen bits of SHA256(entropy).
+func validateChecksum(indices []uint16, wordCount int) bool {
+	checksumLenBits := wordCount / 3 // 4, 5, 6, 7, 8
+	entropyLenBits := wordCount*11 - checksumLenBits
+	entropyLenBytes := entropyLenBits / 8
+
+	// Reconstruct the full bitstream from indices
+	// We need entropyLenBits + checksumLenBits = wordCount*11 bits total
+	totalBits := wordCount * 11
+	bits := make([]byte, (totalBits+7)/8)
+	for i, idx := range indices {
+		for bit := 10; bit >= 0; bit-- {
+			pos := i*11 + (10 - bit)
+			if idx>>(uint(bit)&0xf)&1 == 1 {
+				bits[pos/8] |= 1 << (7 - pos%8)
+			}
+		}
+	}
+
+	// Extract entropy and checksum
+	entropy := make([]byte, entropyLenBytes)
+	copy(entropy, bits[:entropyLenBytes])
+
+	// Compute expected checksum
+	hash := sha256.Sum256(entropy)
+	expectedChecksumBits := hash[:]
+
+	// Extract actual checksum from the bitstream
+	checksumStartByte := entropyLenBytes
+	for i := 0; i < checksumLenBits; i++ {
+		byteIdx := checksumStartByte + i/8
+		bitIdx := 7 - (i % 8)
+		expectedBit := (expectedChecksumBits[i/8] >> (7 - i%8)) & 1
+		actualBit := (bits[byteIdx] >> uint(bitIdx)) & 1
+		if expectedBit != actualBit {
+			return false
+		}
+	}
+
+	return true
+}
+
+// MnemonicFromPhrase parses a space-separated BIP39 mnemonic phrase.
+func MnemonicFromPhrase(phrase string) (*Mnemonic, error) {
+	words := strings.Fields(phrase)
+	if len(words) == 0 {
+		return nil, errors.New("empty mnemonic phrase")
+	}
+
+	wordSet := make(map[string]uint16, 2048)
+	for i, w := range BIP39EnglishWordlist {
+		wordSet[w] = uint16(i)
+	}
+
+	indexes := make([]uint16, len(words))
+	for i, w := range words {
+		idx, ok := wordSet[w]
+		if !ok {
+			return nil, fmt.Errorf("invalid word at position %d: %q", i, w)
+		}
+		indexes[i] = idx
+	}
+
+	return &Mnemonic{
+		indexes:  indexes,
+		words:    words,
+		wordlist: &BIP39EnglishWordlist,
+	}, nil
+}
+
+// ValidateMnemonic validates a BIP39 mnemonic phrase string.
+// It checks word count, wordlist membership, and the BIP39 checksum.
+func ValidateMnemonic(phrase string) error {
+	m, err := MnemonicFromPhrase(phrase)
+	if err != nil {
+		return err
+	}
+	return m.Validate()
 }
