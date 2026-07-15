@@ -177,6 +177,11 @@ func (cs *CommandSet) InitV2(pin, puk string) error {
 	return cs.initWithSecret(pin, nil, puk, []byte{}, 0, 0)
 }
 
+// InitWithOptionsV2 initializes the card with optional alt PIN and retry counts.
+func (cs *CommandSet) InitWithOptionsV2(pin, altPin, puk string, pinRetries, pukRetries uint8) error {
+	return cs.initWithSecret(pin, &altPin, puk, []byte{}, pinRetries, pukRetries)
+}
+
 // InitWithOptions initializes the card with optional alt PIN and retry counts.
 func (cs *CommandSet) InitWithOptions(pin, altPin, puk, pairingPass string, pinRetries, pukRetries uint8) error {
 	sharedSecret := PairingPasswordToSecret(pairingPass)
