@@ -88,7 +88,7 @@ func (cs *CommandSet) selectWithIndex(instanceIdx uint8) error {
 	cmd := globalplatform.NewCommandSelect(instanceAID)
 	cmd.SetLe(0)
 	resp, err := cs.c.Send(cmd)
-	if err = cs.checkOK(resp, err); err != nil {
+	if err = apdu.CheckOK(resp, err); err != nil {
 		return err
 	}
 
@@ -151,7 +151,7 @@ func (cs *CommandSet) Init(secrets *Secrets) error {
 		}
 		initCmd := NewCommandInit(data)
 		resp, err := cs.c.Send(initCmd)
-		return cs.checkOK(resp, err)
+		return apdu.CheckOK(resp, err)
 	}
 
 	// V2: open secure channel first, then send INIT as protected command
@@ -160,7 +160,7 @@ func (cs *CommandSet) Init(secrets *Secrets) error {
 	}
 	initData := cs.buildInitData(secrets.Pin(), secrets.Puk(), secrets.PairingToken(), nil, 0, 0)
 	resp, err := cs.sendProtected(InsInit, 0, 0, initData)
-	return cs.checkOK(resp, err)
+	return apdu.CheckOK(resp, err)
 }
 
 // InitWithSecret initializes the card with a raw shared secret.
@@ -192,7 +192,7 @@ func (cs *CommandSet) initWithSecret(pin string, altPin *string, puk string, sha
 			return err
 		}
 		resp, err := cs.sendProtected(InsInit, 0, 0, initData)
-		return cs.checkOK(resp, err)
+		return apdu.CheckOK(resp, err)
 	}
 
 	// V1: use OneShotEncrypt
@@ -206,7 +206,7 @@ func (cs *CommandSet) initWithSecret(pin string, altPin *string, puk string, sha
 	}
 	initCmd := NewCommandInit(encrypted)
 	resp, err := cs.c.Send(initCmd)
-	return cs.checkOK(resp, err)
+	return apdu.CheckOK(resp, err)
 }
 
 // buildInitData builds the init payload: PIN || PUK || shared_secret || [pin_retries, puk_retries] || [alt_pin]
@@ -249,7 +249,7 @@ func (cs *CommandSet) Pair(pairingPass string) error {
 		return ErrNoAvailablePairingSlots
 	}
 
-	if err = cs.checkOK(resp, err); err != nil {
+	if err = apdu.CheckOK(resp, err); err != nil {
 		return err
 	}
 
@@ -266,7 +266,7 @@ func (cs *CommandSet) Pair(pairingPass string) error {
 	h.Write(cardChallenge)
 	cmd = NewCommandPairFinalStep(h.Sum(nil))
 	resp, err = cs.c.Send(cmd)
-	if err = cs.checkOK(resp, err); err != nil {
+	if err = apdu.CheckOK(resp, err); err != nil {
 		return err
 	}
 
@@ -322,7 +322,7 @@ func (cs *CommandSet) Identify() ([]byte, error) {
 	}
 
 	resp, err := cs.sendProtected(InsIdentify, 0, 0, challenge)
-	if err = cs.checkOK(resp, err); err != nil {
+	if err = apdu.CheckOK(resp, err); err != nil {
 		return nil, err
 	}
 
@@ -350,7 +350,7 @@ func (cs *CommandSet) OpenSecureChannel() error {
 
 	cmd := NewCommandOpenSecureChannel(pairing.Index(), scV1.RawPublicKey())
 	resp, err := cs.c.Send(cmd)
-	if err = cs.checkOK(resp, err); err != nil {
+	if err = apdu.CheckOK(resp, err); err != nil {
 		return err
 	}
 
@@ -374,7 +374,7 @@ func (cs *CommandSet) AutoOpenSecureChannel() error {
 // GetStatus returns the application status for the given info type.
 func (cs *CommandSet) GetStatus(info uint8) (*types.ApplicationStatus, error) {
 	resp, err := cs.sendProtected(InsGetStatus, info, 0, nil)
-	if err = cs.checkOK(resp, err); err != nil {
+	if err = apdu.CheckOK(resp, err); err != nil {
 		return nil, err
 	}
 
@@ -394,7 +394,7 @@ func (cs *CommandSet) GetStatusKeyPath() (*types.ApplicationStatus, error) {
 // VerifyPIN verifies the user PIN.
 func (cs *CommandSet) VerifyPIN(pin string) error {
 	resp, err := cs.sendProtected(InsVerifyPIN, 0, 0, []byte(pin))
-	if err = cs.checkOK(resp, err); err != nil {
+	if err = apdu.CheckOK(resp, err); err != nil {
 		if resp != nil && ((resp.Sw & 0x63C0) == 0x63C0) {
 			remainingAttempts := resp.Sw & 0x000F
 			return &WrongPINError{
@@ -410,14 +410,14 @@ func (cs *CommandSet) VerifyPIN(pin string) error {
 // ChangePIN changes the user PIN.
 func (cs *CommandSet) ChangePIN(pin string) error {
 	resp, err := cs.sendProtected(InsChangePIN, P1ChangePinPIN, 0, []byte(pin))
-	return cs.checkOK(resp, err)
+	return apdu.CheckOK(resp, err)
 }
 
 // UnblockPIN unblocks the PIN using the PUK and a new PIN.
 func (cs *CommandSet) UnblockPIN(puk string, newPIN string) error {
 	data := append([]byte(puk), []byte(newPIN)...)
 	resp, err := cs.sendProtected(InsUnblockPIN, 0, 0, data)
-	if err = cs.checkOK(resp, err); err != nil {
+	if err = apdu.CheckOK(resp, err); err != nil {
 		if resp != nil && ((resp.Sw & 0x63C0) == 0x63C0) {
 			remainingAttempts := resp.Sw & 0x000F
 			return &WrongPUKError{
@@ -433,7 +433,7 @@ func (cs *CommandSet) UnblockPIN(puk string, newPIN string) error {
 // ChangePUK changes the PUK.
 func (cs *CommandSet) ChangePUK(puk string) error {
 	resp, err := cs.sendProtected(InsChangePIN, P1ChangePinPUK, 0, []byte(puk))
-	return cs.checkOK(resp, err)
+	return apdu.CheckOK(resp, err)
 }
 
 // ChangePairingSecret changes the pairing secret (legacy, uses PBKDF2 from secrets.go).
@@ -442,20 +442,20 @@ func (cs *CommandSet) ChangePUK(puk string) error {
 func (cs *CommandSet) ChangePairingSecret(password string) error {
 	secret := generatePairingToken(password)
 	resp, err := cs.sendProtected(InsChangePIN, P1ChangePinPairingSecret, 0, secret)
-	return cs.checkOK(resp, err)
+	return apdu.CheckOK(resp, err)
 }
 
 // ChangePairingPassword changes the pairing password.
 func (cs *CommandSet) ChangePairingPassword(password string) error {
 	secret := PairingPasswordToSecret(password)
 	resp, err := cs.sendProtected(InsChangePIN, P1ChangePinPairingSecret, 0, secret)
-	return cs.checkOK(resp, err)
+	return apdu.CheckOK(resp, err)
 }
 
 // GenerateKey generates a new key on the card.
 func (cs *CommandSet) GenerateKey() ([]byte, error) {
 	resp, err := cs.sendProtected(InsGenerateKey, 0, 0, nil)
-	if err = cs.checkOK(resp, err); err != nil {
+	if err = apdu.CheckOK(resp, err); err != nil {
 		return nil, err
 	}
 
@@ -469,7 +469,7 @@ func (cs *CommandSet) GenerateMnemonic(checksumSize int) ([]int, error) {
 	}
 
 	resp, err := cs.sendProtected(InsGenerateMnemonic, byte(checksumSize), 0, nil)
-	if err = cs.checkOK(resp, err); err != nil {
+	if err = apdu.CheckOK(resp, err); err != nil {
 		return nil, err
 	}
 
@@ -488,7 +488,7 @@ func parseMnemonicResponse(data []byte) ([]int, error) {
 // RemoveKey removes the current key from the card.
 func (cs *CommandSet) RemoveKey() error {
 	resp, err := cs.sendProtected(InsRemoveKey, 0, 0, nil)
-	return cs.checkOK(resp, err)
+	return apdu.CheckOK(resp, err)
 }
 
 // DeriveKey derives a key at the given BIP32 path.
@@ -498,13 +498,13 @@ func (cs *CommandSet) DeriveKey(path string) error {
 		return err
 	}
 	resp, err := cs.sendProtected(InsDeriveKey, uint8(kp.Source()), 0, kp.Data())
-	return cs.checkOK(resp, err)
+	return apdu.CheckOK(resp, err)
 }
 
 // LoadSeed loads a BIP32 seed onto the card.
 func (cs *CommandSet) LoadSeed(seed []byte) ([]byte, error) {
 	resp, err := cs.sendProtected(InsLoadKey, P1LoadKeySeed, 0, seed)
-	if err = cs.checkOK(resp, err); err != nil {
+	if err = apdu.CheckOK(resp, err); err != nil {
 		return nil, err
 	}
 
@@ -529,13 +529,13 @@ func (cs *CommandSet) loadKeyBIP32Inner(keyPair *types.Bip32KeyPair, omitPublic 
 	}
 	keyTLV := keyPair.ToTLV(includePublic)
 	resp, err := cs.sendProtected(InsLoadKey, p1, 0, keyTLV)
-	return cs.checkOK(resp, err)
+	return apdu.CheckOK(resp, err)
 }
 
 // LoadLEEKey loads an LEE seed onto the card.
 func (cs *CommandSet) LoadLEEKey(seed []byte) error {
 	resp, err := cs.sendProtected(InsLoadKey, P1LoadKeyLEE, 0, seed)
-	return cs.checkOK(resp, err)
+	return apdu.CheckOK(resp, err)
 }
 
 // ExportKey exports a key at the given path.
@@ -569,7 +569,7 @@ func (cs *CommandSet) ExportCurrentKey(publicOnly bool) (*types.ExportedKey, err
 		p2 = P2ExportKeyPublicOnly
 	}
 	resp, err := cs.sendProtected(InsExportKey, P1ExportKeyCurrent, p2, nil)
-	if err = cs.checkOK(resp, err); err != nil {
+	if err = apdu.CheckOK(resp, err); err != nil {
 		return nil, err
 	}
 	return types.ParseExportKeyResponse(resp.Data)
@@ -592,7 +592,7 @@ func (cs *CommandSet) ExportKeyWithP2(derive, makeCurrent bool, p2 uint8, path s
 	}
 
 	resp, err := cs.sendProtected(InsExportKey, p1, p2, kp.Data())
-	if err = cs.checkOK(resp, err); err != nil {
+	if err = apdu.CheckOK(resp, err); err != nil {
 		return nil, err
 	}
 
@@ -606,7 +606,7 @@ func (cs *CommandSet) ExportLEEKey(keypath string) ([]byte, error) {
 		return nil, err
 	}
 	resp, err := cs.sendProtected(InsExportLEE, kp.Source(), 0, kp.Data())
-	if err = cs.checkOK(resp, err); err != nil {
+	if err = apdu.CheckOK(resp, err); err != nil {
 		return nil, err
 	}
 	return resp.Data, nil
@@ -619,7 +619,7 @@ func (cs *CommandSet) ExportBIP85(keypath string, length uint8) ([]byte, error) 
 		return nil, err
 	}
 	resp, err := cs.sendProtected(InsExportBIP85, length, 0, kp.Data())
-	if err = cs.checkOK(resp, err); err != nil {
+	if err = apdu.CheckOK(resp, err); err != nil {
 		return nil, err
 	}
 	return resp.Data, nil
@@ -635,19 +635,19 @@ func (cs *CommandSet) SetPinlessPath(path string) error {
 		return errors.New("pinless path must be set with an absolute path")
 	}
 	resp, err := cs.sendProtected(InsSetPinlessPath, 0, 0, kp.Data())
-	return cs.checkOK(resp, err)
+	return apdu.CheckOK(resp, err)
 }
 
 // ResetPinlessPath clears the pinless signing path.
 func (cs *CommandSet) ResetPinlessPath() error {
 	resp, err := cs.sendProtected(InsSetPinlessPath, 0, 0, nil)
-	return cs.checkOK(resp, err)
+	return apdu.CheckOK(resp, err)
 }
 
 // Sign signs a 32-byte hash with the current key (ECDSA).
 func (cs *CommandSet) Sign(data []byte) (*types.Signature, error) {
 	resp, err := cs.sendProtected(InsSign, P1SignCurrentKey, P2SignECDSA, data)
-	if err = cs.checkOK(resp, err); err != nil {
+	if err = apdu.CheckOK(resp, err); err != nil {
 		return nil, err
 	}
 
@@ -678,7 +678,7 @@ func (cs *CommandSet) SignWithPathAndAlgo(data []byte, path string, algo uint8) 
 	p1 := uint8(kp.Source()) | P1SignDerive
 
 	resp, err := cs.sendProtected(InsSign, p1, algo, cmdData)
-	if err = cs.checkOK(resp, err); err != nil {
+	if err = apdu.CheckOK(resp, err); err != nil {
 		return nil, err
 	}
 
@@ -693,7 +693,7 @@ func (cs *CommandSet) SignPinless(data []byte) (*types.Signature, error) {
 
 	cmd := apdu.NewCommand(globalplatform.ClaGp, InsSign, P1SignPinless, P2SignECDSA, data)
 	resp, err := cs.c.Send(cmd)
-	if err = cs.checkOK(resp, err); err != nil {
+	if err = apdu.CheckOK(resp, err); err != nil {
 		return nil, err
 	}
 
@@ -703,7 +703,7 @@ func (cs *CommandSet) SignPinless(data []byte) (*types.Signature, error) {
 // GetData retrieves stored data by type.
 func (cs *CommandSet) GetData(typ uint8) ([]byte, error) {
 	resp, err := cs.sendProtected(InsGetData, typ, 0, nil)
-	if err = cs.checkOK(resp, err); err != nil {
+	if err = apdu.CheckOK(resp, err); err != nil {
 		return nil, err
 	}
 
@@ -713,14 +713,14 @@ func (cs *CommandSet) GetData(typ uint8) ([]byte, error) {
 // StoreData stores data by type at offset 0.
 func (cs *CommandSet) StoreData(typ uint8, data []byte) error {
 	resp, err := cs.sendProtected(InsStoreData, typ, 0, data)
-	return cs.checkOK(resp, err)
+	return apdu.CheckOK(resp, err)
 }
 
 // StoreDataWithOffset stores data by type at an explicit offset.
 // Offset must be a multiple of 4.
 func (cs *CommandSet) StoreDataWithOffset(typ uint8, data []byte, offset uint16) error {
 	resp, err := cs.sendProtected(InsStoreData, typ, byte(offset/4), data)
-	return cs.checkOK(resp, err)
+	return apdu.CheckOK(resp, err)
 }
 
 // SetNDEF sets the NDEF message on the card.
@@ -772,13 +772,13 @@ func (cs *CommandSet) SetNDEF(ndef []byte) error {
 
 	// Legacy SET_NDEF (app version <= 2.x)
 	resp, err := cs.sendProtected(InsSetNDEF, 0, 0, ndef)
-	return cs.checkOK(resp, err)
+	return apdu.CheckOK(resp, err)
 }
 
 // GetChallenge requests a random challenge from the card.
 func (cs *CommandSet) GetChallenge(length uint8) ([]byte, error) {
 	resp, err := cs.sendProtected(InsGetChallenge, length, 0, nil)
-	if err = cs.checkOK(resp, err); err != nil {
+	if err = apdu.CheckOK(resp, err); err != nil {
 		return nil, err
 	}
 	return resp.Data, nil
@@ -788,7 +788,7 @@ func (cs *CommandSet) GetChallenge(length uint8) ([]byte, error) {
 func (cs *CommandSet) FactoryReset() error {
 	cmd := NewCommandFactoryReset()
 	resp, err := cs.c.Send(cmd)
-	return cs.checkOK(resp, err)
+	return apdu.CheckOK(resp, err)
 }
 
 // -----------------------------------------------------------------------
@@ -833,23 +833,7 @@ func PairingPasswordToSecret(password string) []byte {
 
 func (cs *CommandSet) mutualAuthenticate() error {
 	resp, err := cs.sendProtected(InsMutuallyAuthenticate, 0, 0, nil)
-	return cs.checkOK(resp, err)
+	return apdu.CheckOK(resp, err)
 }
 
-func (cs *CommandSet) checkOK(resp *apdu.Response, err error, allowedResponses ...uint16) error {
-	if err != nil {
-		return err
-	}
 
-	if len(allowedResponses) == 0 {
-		allowedResponses = []uint16{apdu.SwOK}
-	}
-
-	for _, code := range allowedResponses {
-		if code == resp.Sw {
-			return nil
-		}
-	}
-
-	return apdu.NewErrBadResponse(resp.Sw, "unexpected response")
-}

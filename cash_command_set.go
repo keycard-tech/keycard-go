@@ -23,7 +23,7 @@ func (cs *CashCommandSet) Select() error {
 	cmd := globalplatform.NewCommandSelect(identifiers.CashInstanceAID)
 	cmd.SetLe(0)
 	resp, err := cs.c.Send(cmd)
-	if err = cs.checkOK(resp, err); err != nil {
+	if err = apdu.CheckOK(resp, err); err != nil {
 		return err
 	}
 
@@ -44,27 +44,11 @@ func (cs *CashCommandSet) Sign(data []byte) (*types.Signature, error) {
 	}
 
 	resp, err := cs.c.Send(cmd)
-	if err = cs.checkOK(resp, err); err != nil {
+	if err = apdu.CheckOK(resp, err); err != nil {
 		return nil, err
 	}
 
 	return types.ParseSignature(data, resp.Data)
 }
 
-func (cs *CashCommandSet) checkOK(resp *apdu.Response, err error, allowedResponses ...uint16) error {
-	if err != nil {
-		return err
-	}
 
-	if len(allowedResponses) == 0 {
-		allowedResponses = []uint16{apdu.SwOK}
-	}
-
-	for _, code := range allowedResponses {
-		if code == resp.Sw {
-			return nil
-		}
-	}
-
-	return apdu.NewErrBadResponse(resp.Sw, "unexpected response")
-}

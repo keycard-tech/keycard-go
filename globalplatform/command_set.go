@@ -35,7 +35,7 @@ func (cs *CommandSet) SelectAID(aid []byte) error {
 	cmd.SetLe(0)
 	resp, err := cs.c.Send(cmd)
 
-	return cs.checkOK(resp, err)
+	return apdu.CheckOK(resp, err)
 }
 
 func (cs *CommandSet) OpenSecureChannel() error {
@@ -71,7 +71,7 @@ func (cs *CommandSet) DeleteObjectAndRelatedObject(aid []byte) error {
 func (cs *CommandSet) Delete(aid []byte, p2 uint8) error {
 	cmd := NewCommandDelete(aid, p2)
 	resp, err := cs.sc.Send(cmd)
-	return cs.checkOK(resp, err, SwOK, SwReferencedDataNotFound)
+	return apdu.CheckOK(resp, err, SwOK, SwReferencedDataNotFound)
 }
 
 func (cs *CommandSet) LoadKeycardPackage(capFile *os.File, callback LoadingCallback) error {
@@ -85,7 +85,7 @@ func (cs *CommandSet) LoadPackage(capFile *os.File, pkgAID []byte, callback Load
 
 	preLoad := NewCommandInstallForLoad(pkgAID, []byte{})
 	resp, err := cs.sc.Send(preLoad)
-	if err = cs.checkOK(resp, err); err != nil {
+	if err = apdu.CheckOK(resp, err); err != nil {
 		return err
 	}
 
@@ -98,7 +98,7 @@ func (cs *CommandSet) LoadPackage(capFile *os.File, pkgAID []byte, callback Load
 		cmd := load.GetCommand()
 		callback(int(load.Index()), load.BlocksCount())
 		resp, err = cs.sc.Send(cmd)
-		if err = cs.checkOK(resp, err); err != nil {
+		if err = apdu.CheckOK(resp, err); err != nil {
 			return err
 		}
 	}
@@ -138,13 +138,13 @@ func (cs *CommandSet) InstallCashApplet() error {
 func (cs *CommandSet) InstallForInstall(packageAID, appletAID, instanceAID, params []byte) error {
 	cmd := NewCommandInstallForInstall(packageAID, appletAID, instanceAID, params)
 	resp, err := cs.sc.Send(cmd)
-	return cs.checkOK(resp, err)
+	return apdu.CheckOK(resp, err)
 }
 
 func (cs *CommandSet) GetStatus() (*types.CardStatus, error) {
 	cmd := NewCommandGetStatus([]byte{}, P1GetStatusIssuerSecurityDomain)
 	resp, err := cs.sc.Send(cmd)
-	if err = cs.checkOK(resp, err); err != nil {
+	if err = apdu.CheckOK(resp, err); err != nil {
 		return nil, err
 	}
 
@@ -162,7 +162,7 @@ func (cs *CommandSet) SecureChannel() *SecureChannel {
 func (cs *CommandSet) initializeUpdate(hostChallenge []byte) error {
 	cmd := NewCommandInitializeUpdate(hostChallenge)
 	resp, err := cs.c.Send(cmd)
-	if err = cs.checkOK(resp, err); err != nil {
+	if err = apdu.CheckOK(resp, err); err != nil {
 		return err
 	}
 
@@ -221,25 +221,7 @@ func (cs *CommandSet) externalAuthenticate() error {
 	}
 
 	resp, err := cs.sc.Send(cmd)
-	return cs.checkOK(resp, err)
-}
-
-func (cs *CommandSet) checkOK(resp *apdu.Response, err error, allowedResponses ...uint16) error {
-	if err != nil {
-		return err
-	}
-
-	if len(allowedResponses) == 0 {
-		allowedResponses = []uint16{apdu.SwOK}
-	}
-
-	for _, code := range allowedResponses {
-		if code == resp.Sw {
-			return nil
-		}
-	}
-
-	return apdu.NewErrBadResponse(resp.Sw, "unexpected response")
+	return apdu.CheckOK(resp, err)
 }
 
 func generateHostChallenge() ([]byte, error) {
