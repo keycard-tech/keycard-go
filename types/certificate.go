@@ -1,6 +1,7 @@
 package types
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -9,9 +10,9 @@ import (
 	"github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 	"github.com/status-im/keycard-go/tlv"
 )
-
 // Certificate represents a card identity certificate.
 type Certificate struct {
+	identPriv []byte
 	identPub  [33]byte
 	signature *Signature
 }
@@ -126,4 +127,107 @@ func VerifyIdentity(hash []byte, tlvData []byte) ([]byte, error) {
 	}
 
 	return compressPublicKey(cert.signature.pubKey), nil
+}
+
+// IdentPriv returns the card's identity private key (32 bytes).
+// Returns nil if the certificate was parsed from external data (no private key).
+func (c *Certificate) IdentPriv() []byte {
+	return c.identPriv
+}
+
+// RecID returns the signature recovery ID.
+func (c *Certificate) RecID() byte {
+	return c.signature.v
+}
+
+// ToStoreData serializes the certificate for storage.
+//
+// Format: identPub(33) || r(32) || s(32) || recID(1) || identPriv(32)
+// Total: 130 bytes
+//
+// Requires the private key to be set (i.e., certificate was created, not parsed).
+func (c *Certificate) ToStoreData() ([]byte, error) {
+	if c.identPriv == nil {
+		return nil, errors.New("private key not set, cannot serialize for storage")
+	}
+
+	data := make([]byte, 0, 130)
+	data = append(data, c.identPub[:]...)
+	data = append(data, c.signature.r...)
+	data = append(data, c.signature.s...)
+	data = append(data, c.signature.v)
+	data = append(data, c.identPriv...)
+	return data, nil
+}
+
+// GenerateIdentKeyPair generates a new secp256k1 keypair for identity.
+func GenerateIdentKeyPair() (*secp256k1.PrivateKey, error) {
+	return secp256k1.GeneratePrivateKey()
+}
+
+// CreateCertificate creates a certificate signed by the CA over the given identity public key.
+//
+// The CA private key signs SHA256(identPub) and the resulting signature (r, s, recID)
+// is stored alongside the identity public key.
+func CreateCertificate(caPriv *secp256k1.PrivateKey, identPub [33]byte, identPriv []byte) (*Certificate, error) {
+	// Hash the compressed public key
+	hash := sha256.Sum256(identPub[:])
+
+	// Sign the hash with the CA private key
+	sig := ecdsa.Sign(caPriv, hash[:])
+
+	// Extract r and s from DER-encoded signature
+	r, s, err := DERSignatureToRS(sig.Serialize())
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract r/s from signature: %w", err)
+	}
+
+	// Pad r and s to 32 bytes
+	rPadded := make([]byte, 32)
+	sPadded := make([]byte, 32)
+	copy(rPadded[32-len(r):], r)
+	copy(sPadded[32-len(s):], s)
+
+	// Calculate recID by trying all 4 possibilities and checking which recovers the CA public key
+	caPub := caPriv.PubKey()
+	caPubCompressed := caPub.SerializeCompressed()
+	var recID byte
+	for i := byte(0); i < 4; i++ {
+		recovered, err := RecoverPublicKey(int32(i), hash[:], rPadded, sPadded, true)
+		if err != nil {
+			continue
+		}
+		if bytes.Equal(recovered, caPubCompressed) {
+			recID = i
+			break
+		}
+	}
+
+	return &Certificate{
+		identPriv: identPriv,
+		identPub:  identPub,
+		signature: &Signature{
+			pubKey: caPubCompressed,
+			r:      rPadded,
+			s:      sPadded,
+			v:      recID,
+		},
+	}, nil
+}
+
+// GenerateNewCertificate generates a new identity keypair and creates a certificate signed by the CA.
+func GenerateNewCertificate(caPriv *secp256k1.PrivateKey) (*Certificate, error) {
+	identPriv, err := GenerateIdentKeyPair()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate identity keypair: %w", err)
+	}
+
+	identPubBytes := identPriv.PubKey().SerializeCompressed()
+	var identPub [33]byte
+	copy(identPub[:], identPubBytes)
+
+	// Serialize private key to 32 bytes
+	privBytes := identPriv.Serialize()
+
+	return CreateCertificate(caPriv, identPub, privBytes)
 }
