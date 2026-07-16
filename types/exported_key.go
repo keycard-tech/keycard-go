@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	ethcrypto "github.com/ethereum/go-ethereum/crypto"
-	"github.com/keycard-tech/keycard-go/apdu"
+	"github.com/keycard-tech/keycard-go/v4/apdu"
 )
 
 var (

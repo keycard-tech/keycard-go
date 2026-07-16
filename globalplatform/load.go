@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/keycard-tech/keycard-go/apdu"
+	"github.com/keycard-tech/keycard-go/v4/apdu"
 )
 
 var internalFiles = []string{

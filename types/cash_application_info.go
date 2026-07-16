@@ -1,6 +1,6 @@
 package types
 
-import "github.com/keycard-tech/keycard-go/apdu"
+import "github.com/keycard-tech/keycard-go/v4/apdu"
 
 type CashApplicationInfo struct {
 	Installed  bool

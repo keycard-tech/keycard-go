@@ -8,7 +8,7 @@ import (
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
-	"github.com/keycard-tech/keycard-go/tlv"
+	"github.com/keycard-tech/keycard-go/v4/tlv"
 )
 // Certificate represents a card identity certificate.
 type Certificate struct {

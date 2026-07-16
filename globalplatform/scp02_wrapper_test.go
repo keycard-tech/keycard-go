@@ -3,9 +3,9 @@ package globalplatform
 import (
 	"testing"
 
-	"github.com/keycard-tech/keycard-go/apdu"
-	"github.com/keycard-tech/keycard-go/globalplatform/crypto"
-	"github.com/keycard-tech/keycard-go/hexutils"
+	"github.com/keycard-tech/keycard-go/v4/apdu"
+	"github.com/keycard-tech/keycard-go/v4/globalplatform/crypto"
+	"github.com/keycard-tech/keycard-go/v4/hexutils"
 	"github.com/stretchr/testify/assert"
 )
 

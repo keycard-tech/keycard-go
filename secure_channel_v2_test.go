@@ -8,9 +8,9 @@ import (
 	"testing"
 
 	ethcrypto "github.com/ethereum/go-ethereum/crypto"
-	"github.com/keycard-tech/keycard-go/apdu"
-	"github.com/keycard-tech/keycard-go/crypto"
-	"github.com/keycard-tech/keycard-go/types"
+	"github.com/keycard-tech/keycard-go/v4/apdu"
+	"github.com/keycard-tech/keycard-go/v4/crypto"
+	"github.com/keycard-tech/keycard-go/v4/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

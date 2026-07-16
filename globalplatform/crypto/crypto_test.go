@@ -3,7 +3,7 @@ package crypto
 import (
 	"testing"
 
-	"github.com/keycard-tech/keycard-go/hexutils"
+	"github.com/keycard-tech/keycard-go/v4/hexutils"
 	"github.com/stretchr/testify/assert"
 )
 

@@ -1,8 +1,8 @@
 package types
 
 import (
-	"github.com/keycard-tech/keycard-go/derivationpath"
-	"github.com/keycard-tech/keycard-go/tlv"
+	"github.com/keycard-tech/keycard-go/v4/derivationpath"
+	"github.com/keycard-tech/keycard-go/v4/tlv"
 )
 
 type ApplicationStatus struct {

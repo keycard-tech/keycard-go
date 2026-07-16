@@ -1,6 +1,6 @@
 package keycard
 
-import "github.com/keycard-tech/keycard-go/globalplatform"
+import "github.com/keycard-tech/keycard-go/v4/globalplatform"
 
 // ============================================================================
 // AIDs

@@ -6,7 +6,7 @@ import (
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/keycard-tech/keycard-go/apdu"
+	"github.com/keycard-tech/keycard-go/v4/apdu"
 )
 
 var (

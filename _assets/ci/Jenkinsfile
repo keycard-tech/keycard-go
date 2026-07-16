@@ -14,11 +14,11 @@ pipeline {
     ))
     disableConcurrentBuilds()
     /* Go requires a certain directory structure */
-    checkoutToSubdirectory('src/github.com/status-im/keycard-go')
+    checkoutToSubdirectory('src/github.com/keycard-tech/keycard-go')
   }
 
   environment {
-    PROJECT = 'src/github.com/status-im/keycard-go'
+    PROJECT = 'src/github.com/keycard-tech/keycard-go'
     GOPATH  = "${env.WORKSPACE}"
     PATH    = "${env.PATH}:${env.GOPATH}/bin"
     GOCACHE = '/tmp/gocache'

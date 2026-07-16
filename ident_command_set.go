@@ -1,10 +1,10 @@
 package keycard
 
 import (
-	"github.com/keycard-tech/keycard-go/apdu"
-	"github.com/keycard-tech/keycard-go/globalplatform"
-	"github.com/keycard-tech/keycard-go/identifiers"
-	"github.com/keycard-tech/keycard-go/types"
+	"github.com/keycard-tech/keycard-go/v4/apdu"
+	"github.com/keycard-tech/keycard-go/v4/globalplatform"
+	"github.com/keycard-tech/keycard-go/v4/identifiers"
+	"github.com/keycard-tech/keycard-go/v4/types"
 )
 
 // IdentCommandSet is the API for interacting with the Ident applet.

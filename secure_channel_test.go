@@ -4,9 +4,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/keycard-tech/keycard-go/apdu"
-	"github.com/keycard-tech/keycard-go/hexutils"
-	"github.com/keycard-tech/keycard-go/types"
+	"github.com/keycard-tech/keycard-go/v4/apdu"
+	"github.com/keycard-tech/keycard-go/v4/hexutils"
+	"github.com/keycard-tech/keycard-go/v4/types"
 	"github.com/stretchr/testify/assert"
 )
 

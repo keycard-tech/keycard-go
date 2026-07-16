@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/keycard-tech/keycard-go/apdu"
-	"github.com/keycard-tech/keycard-go/globalplatform/crypto"
+	"github.com/keycard-tech/keycard-go/v4/apdu"
+	"github.com/keycard-tech/keycard-go/v4/globalplatform/crypto"
 )
 
 const supportedSCPVersion = 2

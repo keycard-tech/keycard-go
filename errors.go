@@ -3,7 +3,7 @@ package keycard
 import (
 	"fmt"
 
-	"github.com/keycard-tech/keycard-go/apdu"
+	"github.com/keycard-tech/keycard-go/v4/apdu"
 )
 
 // ============================================================================
