@@ -25,6 +25,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/ebfe/scard"
 	"github.com/keycard-tech/keycard-go/v4"
 	"github.com/keycard-tech/keycard-go/v4/apdu"
@@ -312,6 +314,43 @@ func TestIntegrationFullSignFlow(t *testing.T) {
 	t.Logf("signature verified successfully (pubkey=%s)",
 		hexutils.BytesToHexWithSpaces(sigPubKey),
 	)
+
+	// 8b. Schnorr signature (app version >= 4)
+	if info.AppVersion() >= 0x0400 {
+		schnorrSig, err := kc.SignWithPathAndAlgo(hash[:], path, keycard.P2SignBIP340Schnorr)
+		if err != nil {
+			t.Fatalf("SignWithPathAndAlgo (Schnorr) failed: %v", err)
+		}
+
+		// Reconstruct the 64-byte signature (r||s) and verify it
+		sigBytes := append(schnorrSig.R(), schnorrSig.S()...)
+		parsedSig, err := schnorr.ParseSignature(sigBytes)
+		if err != nil {
+			t.Fatalf("failed to parse Schnorr signature: %v", err)
+		}
+
+		// Parse the public key — compress if needed (btcec schnorr needs compressed/x-only)
+		pubKeyBytes := schnorrSig.PubKey()
+		if len(pubKeyBytes) == 65 {
+			// Convert uncompressed to compressed
+			if pubKeyBytes[64]&1 == 1 {
+				pubKeyBytes[0] = 3
+			} else {
+				pubKeyBytes[0] = 2
+			}
+			pubKeyBytes = pubKeyBytes[:33]
+		}
+		pubKey, err := btcec.ParsePubKey(pubKeyBytes)
+		if err != nil {
+			t.Fatalf("failed to parse public key for Schnorr verification: %v", err)
+		}
+
+		if !parsedSig.Verify(hash[:], pubKey) {
+			t.Fatal("Schnorr signature verification failed")
+		}
+
+		t.Log("schnorr signature verified")
+	}
 
 	// 9. Unpair (V1 only)
 	if hasSecureChannel {

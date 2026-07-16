@@ -12,6 +12,7 @@ import (
 var (
 	TagSignatureTemplate = uint8(0xA0)
 	TagRawSignature      = uint8(0x80)
+	TagSchnorrSignature  = uint8(0x88)
 )
 
 type Signature struct {
@@ -57,24 +58,35 @@ func ParseRecoverableSignature(message, sig []byte) (*Signature, error) {
 
 func DERSignatureToRS(tlv []byte) ([]byte, []byte, error) {
 	r, err := apdu.FindTagN(tlv, 0, apdu.Tag{0x30}, apdu.Tag{0x02})
+	if err == nil {
+		// DER-encoded signature (tag 0x30 containing INTEGERs)
+		if len(r) > 32 {
+			r = r[len(r)-32:]
+		}
+
+		s, err := apdu.FindTagN(tlv, 1, apdu.Tag{0x30}, apdu.Tag{0x02})
+		if err != nil {
+			return nil, nil, err
+		}
+
+		if len(s) > 32 {
+			s = s[len(s)-32:]
+		}
+
+		return r, s, nil
+	}
+
+	// Fall back to Schnorr signature: tag 0x88 contains raw 64 bytes (r||s)
+	schnorr, err := apdu.FindTag(tlv, apdu.Tag{TagSchnorrSignature})
 	if err != nil {
 		return nil, nil, err
 	}
 
-	if len(r) > 32 {
-		r = r[len(r)-32:]
+	if len(schnorr) != 64 {
+		return nil, nil, errors.New("schnorr signature must be 64 bytes")
 	}
 
-	s, err := apdu.FindTagN(tlv, 1, apdu.Tag{0x30}, apdu.Tag{0x02})
-	if err != nil {
-		return nil, nil, err
-	}
-
-	if len(s) > 32 {
-		s = s[len(s)-32:]
-	}
-
-	return r, s, nil
+	return schnorr[0:32], schnorr[32:64], nil
 }
 
 func (s *Signature) PubKey() []byte {
@@ -104,9 +116,17 @@ func parseLegacySignature(message, template []byte) (*Signature, error) {
 		return nil, err
 	}
 
-	v, err := calculateV(message, pubKey, r, s)
-	if err != nil {
-		return nil, err
+	// Schnorr signatures (tag 0x88) don't support pubkey recovery via ECDSA.
+	// The card already provides the pubkey in tag 0x80, so we skip calculateV.
+	_, isSchnorrErr := apdu.FindTag(template, apdu.Tag{TagSchnorrSignature})
+	isSchnorr := isSchnorrErr == nil
+
+	var v byte
+	if !isSchnorr {
+		v, err = calculateV(message, pubKey, r, s)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return &Signature{

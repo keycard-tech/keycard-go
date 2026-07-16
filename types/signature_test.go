@@ -229,4 +229,36 @@ func TestDERSignatureToRS_LongR(t *testing.T) {
 	assert.Equal(t, 32, len(sOut))
 }
 
+func TestDERSignatureToRS_SchnorrRaw(t *testing.T) {
+	// Schnorr signature: tag 0x88 with raw 64 bytes (r||s)
+	r := make([]byte, 32)
+	s := make([]byte, 32)
+	for i := range r {
+		r[i] = byte(i + 1)
+	}
+	for i := range s {
+		s[i] = byte(i + 100)
+	}
+
+	// Tag 0x88, length 64, r(32) + s(32)
+	tlv := make([]byte, 0, 66)
+	tlv = append(tlv, TagSchnorrSignature, 0x40)
+	tlv = append(tlv, r...)
+	tlv = append(tlv, s...)
+
+	rOut, sOut, err := DERSignatureToRS(tlv)
+	require.NoError(t, err)
+	assert.Equal(t, r, rOut)
+	assert.Equal(t, s, sOut)
+}
+
+func TestDERSignatureToRS_SchnorrInvalidLength(t *testing.T) {
+	// Tag 0x88 with wrong length should error
+	tlv := []byte{TagSchnorrSignature, 0x08, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}
+
+	_, _, err := DERSignatureToRS(tlv)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "schnorr signature must be 64 bytes")
+}
+
 
