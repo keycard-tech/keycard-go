@@ -38,7 +38,11 @@ func (cs *CashCommandSet) Select() error {
 }
 
 func (cs *CashCommandSet) Sign(data []byte) (*types.Signature, error) {
-	cmd, err := NewCommandSign(data, 0x00, "")
+	return cs.SignWithAlgo(data, 0x00)
+}
+
+func (cs *CashCommandSet) SignWithAlgo(data []byte, algo uint8) (*types.Signature, error) {
+	cmd, err := NewCommandSign(data, 0x00, algo, "")
 	if err != nil {
 		return nil, err
 	}

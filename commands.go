@@ -320,7 +320,7 @@ func NewCommandSetPinlessPath(pathStr string) (*apdu.Command, error) {
 	), nil
 }
 
-func NewCommandSign(data []byte, p1 uint8, pathStr string) (*apdu.Command, error) {
+func NewCommandSign(data []byte, p1, p2 uint8, pathStr string) (*apdu.Command, error) {
 	if len(data) != 32 {
 		return nil, fmt.Errorf("data length must be 32, got %d", len(data))
 	}
@@ -345,7 +345,7 @@ func NewCommandSign(data []byte, p1 uint8, pathStr string) (*apdu.Command, error
 		globalplatform.ClaGp,
 		InsSign,
 		p1,
-		1,
+		p2,
 		data,
 	), nil
 }
