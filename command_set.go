@@ -6,12 +6,12 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/status-im/keycard-go/apdu"
-	"github.com/status-im/keycard-go/crypto"
-	"github.com/status-im/keycard-go/derivationpath"
-	"github.com/status-im/keycard-go/globalplatform"
-	"github.com/status-im/keycard-go/identifiers"
-	"github.com/status-im/keycard-go/types"
+	"github.com/keycard-tech/keycard-go/apdu"
+	"github.com/keycard-tech/keycard-go/crypto"
+	"github.com/keycard-tech/keycard-go/derivationpath"
+	"github.com/keycard-tech/keycard-go/globalplatform"
+	"github.com/keycard-tech/keycard-go/identifiers"
+	"github.com/keycard-tech/keycard-go/types"
 )
 
 var ErrNoAvailablePairingSlots = errors.New("no available pairing slots")

@@ -1,10 +1,10 @@
-module github.com/status-im/keycard-go/integration
+module github.com/keycard-tech/keycard-go/integration
 
 go 1.17
 
 require (
 	github.com/ebfe/scard v0.0.0-20241214075232-7af069cabc25
-	github.com/status-im/keycard-go v0.0.0
+	github.com/keycard-tech/keycard-go v0.0.0
 )
 
 require (
@@ -17,4 +17,4 @@ require (
 	golang.org/x/text v0.4.0 // indirect
 )
 
-replace github.com/status-im/keycard-go => ../
+replace github.com/keycard-tech/keycard-go => ../

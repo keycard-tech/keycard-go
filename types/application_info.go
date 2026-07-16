@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/status-im/keycard-go/tlv"
+	"github.com/keycard-tech/keycard-go/tlv"
 )
 
 var ErrWrongApplicationInfoTemplate = errors.New("wrong application info template")

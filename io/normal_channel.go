@@ -2,9 +2,9 @@ package io
 
 import (
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/status-im/keycard-go/apdu"
-	"github.com/status-im/keycard-go/globalplatform"
-	"github.com/status-im/keycard-go/hexutils"
+	"github.com/keycard-tech/keycard-go/apdu"
+	"github.com/keycard-tech/keycard-go/globalplatform"
+	"github.com/keycard-tech/keycard-go/hexutils"
 )
 
 var logger = log.New("package", "keycard-go/io")

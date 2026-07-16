@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"encoding/binary"
 
-	"github.com/status-im/keycard-go/apdu"
-	"github.com/status-im/keycard-go/globalplatform/crypto"
+	"github.com/keycard-tech/keycard-go/apdu"
+	"github.com/keycard-tech/keycard-go/globalplatform/crypto"
 )
 
 // SCP02Wrapper is a wrapper for apdu commands inside a global platform secure channel.

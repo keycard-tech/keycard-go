@@ -5,9 +5,9 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/status-im/keycard-go/apdu"
-	"github.com/status-im/keycard-go/derivationpath"
-	"github.com/status-im/keycard-go/globalplatform"
+	"github.com/keycard-tech/keycard-go/apdu"
+	"github.com/keycard-tech/keycard-go/derivationpath"
+	"github.com/keycard-tech/keycard-go/globalplatform"
 )
 
 func NewCommandInit(data []byte) *apdu.Command {

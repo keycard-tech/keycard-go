@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/status-im/keycard-go/crypto"
+	"github.com/keycard-tech/keycard-go/crypto"
 	"golang.org/x/crypto/pbkdf2"
 	"golang.org/x/text/unicode/norm"
 )

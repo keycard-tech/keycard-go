@@ -1,4 +1,4 @@
-module github.com/status-im/keycard-go
+module github.com/keycard-tech/keycard-go
 
 go 1.17
 

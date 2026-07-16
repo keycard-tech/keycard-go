@@ -1,10 +1,10 @@
 package keycard
 
 import (
-	"github.com/status-im/keycard-go/apdu"
-	"github.com/status-im/keycard-go/globalplatform"
-	"github.com/status-im/keycard-go/identifiers"
-	"github.com/status-im/keycard-go/types"
+	"github.com/keycard-tech/keycard-go/apdu"
+	"github.com/keycard-tech/keycard-go/globalplatform"
+	"github.com/keycard-tech/keycard-go/identifiers"
+	"github.com/keycard-tech/keycard-go/types"
 )
 
 type CashCommandSet struct {

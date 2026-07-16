@@ -6,8 +6,8 @@ import (
 	"fmt"
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
-	"github.com/status-im/keycard-go/crypto"
-	"github.com/status-im/keycard-go/tlv"
+	"github.com/keycard-tech/keycard-go/crypto"
+	"github.com/keycard-tech/keycard-go/tlv"
 )
 
 // Bip32KeyPair represents a BIP32 keypair with optional private key, chain code, and public key.

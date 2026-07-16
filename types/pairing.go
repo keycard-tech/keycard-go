@@ -4,7 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 
-	"github.com/status-im/keycard-go/crypto"
+	"github.com/keycard-tech/keycard-go/crypto"
 )
 
 // Pairing holds Secure Channel V1 pairing data.

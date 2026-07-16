@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/status-im/keycard-go/tlv"
+	"github.com/keycard-tech/keycard-go/tlv"
 )
 
 const (

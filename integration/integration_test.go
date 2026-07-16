@@ -26,11 +26,11 @@ import (
 	"testing"
 
 	"github.com/ebfe/scard"
-	"github.com/status-im/keycard-go"
-	"github.com/status-im/keycard-go/apdu"
-	"github.com/status-im/keycard-go/hexutils"
-	"github.com/status-im/keycard-go/io"
-	"github.com/status-im/keycard-go/types"
+	"github.com/keycard-tech/keycard-go"
+	"github.com/keycard-tech/keycard-go/apdu"
+	"github.com/keycard-tech/keycard-go/hexutils"
+	"github.com/keycard-tech/keycard-go/io"
+	"github.com/keycard-tech/keycard-go/types"
 )
 
 // ============================================================================
