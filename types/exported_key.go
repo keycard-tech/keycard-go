@@ -4,14 +4,7 @@ import (
 	"fmt"
 
 	ethcrypto "github.com/ethereum/go-ethereum/crypto"
-	"github.com/keycard-tech/keycard-go/v4/apdu"
-)
-
-var (
-	TagExportKeyTemplate    = apdu.Tag{0xA1}
-	TagExportKeyPublic      = apdu.Tag{0x80}
-	TagExportKeyPrivate     = apdu.Tag{0x81}
-	TagExportKeyPublicChain = apdu.Tag{0x82}
+	"github.com/keycard-tech/keycard-go/v4/tlv"
 )
 
 type ExportedKey struct {
@@ -33,14 +26,29 @@ func (k *ExportedKey) ChainCode() []byte {
 }
 
 func ParseExportKeyResponse(data []byte) (*ExportedKey, error) {
-	tpl, err := apdu.FindTag(data, TagExportKeyTemplate)
+	r := tlv.NewBerTlvReader(data)
+
+	tpl, err := r.ReadPrimitive(tlv.TLV_KEY_TEMPLATE)
 	if err != nil {
 		return nil, err
 	}
 
-	pubKey := tryFindTag(tpl, TagExportKeyPublic)
-	privKey := tryFindTag(tpl, TagExportKeyPrivate)
-	chainCode := tryFindTag(tpl, TagExportKeyPublicChain)
+	inner := tlv.NewBerTlvReader(tpl)
+
+	pubKey, err := inner.ReadPrimitiveIfPresent(tlv.TLV_PUB_KEY)
+	if err != nil {
+		return nil, err
+	}
+
+	privKey, err := inner.ReadPrimitiveIfPresent(tlv.TLV_PRIV_KEY)
+	if err != nil {
+		return nil, err
+	}
+
+	chainCode, err := inner.ReadPrimitiveIfPresent(tlv.TLV_CHAIN_CODE)
+	if err != nil {
+		return nil, err
+	}
 
 	if len(pubKey) == 0 && len(privKey) > 0 {
 		ecdsaKey, err := ethcrypto.HexToECDSA(fmt.Sprintf("%x", privKey))
@@ -52,13 +60,4 @@ func ParseExportKeyResponse(data []byte) (*ExportedKey, error) {
 	}
 
 	return &ExportedKey{pubKey, privKey, chainCode}, nil
-}
-
-func tryFindTag(tpl []byte, tags ...apdu.Tag) []byte {
-	data, err := apdu.FindTag(tpl, tags...)
-	if err != nil {
-		return nil
-	}
-
-	return data
 }

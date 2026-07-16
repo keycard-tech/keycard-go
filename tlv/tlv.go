@@ -3,7 +3,7 @@ package tlv
 import "fmt"
 
 // ============================================================================
-// TLV tag constants
+// TLV tag constants (single-byte, uint8)
 // ============================================================================
 
 // BOOLEAN tag
@@ -50,6 +50,9 @@ const TLV_UID uint8 = 0x8F
 
 // Status
 const TLV_STATUS uint8 = 0x8C
+
+// Public data
+const TLV_PUB_DATA uint8 = 0x82
 
 // ============================================================================
 // BER length encoding
@@ -183,6 +186,38 @@ func (r *BerTlvReader) ReadPrimitive(tag uint8) ([]byte, error) {
 	value := r.buffer[r.pos : r.pos+int(length)]
 	r.pos += int(length)
 	return value, nil
+}
+
+// ReadPrimitiveIfPresent checks if the next tag matches. If it does, reads and
+// returns the value bytes. If the next tag does not match, returns (nil, nil) —
+// not an error — so callers can handle optional TLV fields.
+func (r *BerTlvReader) ReadPrimitiveIfPresent(tag uint8) ([]byte, error) {
+	if !r.NextTagIs(tag) {
+		return nil, nil
+	}
+	return r.ReadPrimitive(tag)
+}
+
+// Skip advances past the current TLV (tag already consumed, length just read).
+func (r *BerTlvReader) Skip(length uint32) error {
+	if r.pos+int(length) > len(r.buffer) {
+		return fmt.Errorf("not enough data to skip: need %d bytes, have %d", length, len(r.buffer)-r.pos)
+	}
+	r.pos += int(length)
+	return nil
+}
+
+// SkipPrimitive reads and discards the next TLV (tag + length + value).
+func (r *BerTlvReader) SkipPrimitive() error {
+	_, err := r.ReadTag()
+	if err != nil {
+		return err
+	}
+	length, err := r.ReadLength()
+	if err != nil {
+		return err
+	}
+	return r.Skip(length)
 }
 
 // ReadBoolean reads a BOOLEAN tag (0x01), returns true if value byte is 0xFF.

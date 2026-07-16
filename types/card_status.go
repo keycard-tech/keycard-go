@@ -3,14 +3,14 @@ package types
 import (
 	"fmt"
 
-	"github.com/keycard-tech/keycard-go/v4/apdu"
+	"github.com/keycard-tech/keycard-go/v4/tlv"
 )
 
 type lifeCycle byte
 
 var (
-	TagGetStatusTemplate       = apdu.Tag{0xE3}
-	TagGetStatusLifeCycleState = apdu.Tag{0x9F, 0x70}
+	// TagGetStatusTemplate is the outer template tag for card status responses.
+	TagGetStatusTemplate uint8 = 0xE3
 )
 
 const (
@@ -55,12 +55,26 @@ func (cs *CardStatus) LifeCycle() string {
 }
 
 func ParseCardStatus(data []byte) (*CardStatus, error) {
-	tpl, err := apdu.FindTag(data, TagGetStatusTemplate)
+	r := tlv.NewBerTlvReader(data)
+
+	tpl, err := r.ReadPrimitive(TagGetStatusTemplate)
 	if err != nil {
 		return nil, err
 	}
 
-	lc, err := apdu.FindTag(tpl, TagGetStatusLifeCycleState)
+	inner := tlv.NewBerTlvReader(tpl)
+
+	// Skip the 0x4F tag that precedes the lifecycle state.
+	if err := inner.SkipPrimitive(); err != nil {
+		return nil, err
+	}
+
+	// The lifecycle state uses a two-byte tag 0x9F 0x70.
+	// We consume the leading 0x9F byte as a standalone tag, then read 0x70.
+	if _, err := inner.ReadTag(); err != nil {
+		return nil, err
+	}
+	lc, err := inner.ReadPrimitive(0x70)
 	if err != nil {
 		return nil, err
 	}

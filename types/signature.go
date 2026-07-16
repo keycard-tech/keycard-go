@@ -6,13 +6,12 @@ import (
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/keycard-tech/keycard-go/v4/apdu"
+	"github.com/keycard-tech/keycard-go/v4/tlv"
 )
 
 var (
-	TagSignatureTemplate = uint8(0xA0)
-	TagRawSignature      = uint8(0x80)
-	TagSchnorrSignature  = uint8(0x88)
+	TagRawSignature     uint8 = 0x80
+	TagSchnorrSignature uint8 = 0x88
 )
 
 type Signature struct {
@@ -23,19 +22,27 @@ type Signature struct {
 }
 
 func ParseSignature(message, resp []byte) (*Signature, error) {
-	// check for old template first because TagRawSignature matches the pubkey tag
-	template, err := apdu.FindTag(resp, apdu.Tag{TagSignatureTemplate})
-	if err == nil {
+	r := tlv.NewBerTlvReader(resp)
+
+	// Check for legacy template (0xA0) first because TagRawSignature matches the pubkey tag
+	if r.NextTagIs(tlv.TLV_SIGNATURE_TEMPLATE) {
+		template, err := r.ReadPrimitive(tlv.TLV_SIGNATURE_TEMPLATE)
+		if err != nil {
+			return nil, err
+		}
 		return parseLegacySignature(message, template)
 	}
 
-	sig, err := apdu.FindTag(resp, apdu.Tag{TagRawSignature})
-
+	// Check for raw recoverable signature (0x80)
+	sig, err := r.ReadPrimitiveIfPresent(TagRawSignature)
 	if err != nil {
 		return nil, err
 	}
+	if len(sig) > 0 {
+		return ParseRecoverableSignature(message, sig)
+	}
 
-	return ParseRecoverableSignature(message, sig)
+	return nil, errors.New("no signature found in response")
 }
 
 func ParseRecoverableSignature(message, sig []byte) (*Signature, error) {
@@ -56,30 +63,43 @@ func ParseRecoverableSignature(message, sig []byte) (*Signature, error) {
 	}, nil
 }
 
-func DERSignatureToRS(tlv []byte) ([]byte, []byte, error) {
-	r, err := apdu.FindTagN(tlv, 0, apdu.Tag{0x30}, apdu.Tag{0x02})
-	if err == nil {
-		// DER-encoded signature (tag 0x30 containing INTEGERs)
-		if len(r) > 32 {
-			r = r[len(r)-32:]
-		}
+func DERSignatureToRS(tlvData []byte) ([]byte, []byte, error) {
+	r := tlv.NewBerTlvReader(tlvData)
 
-		s, err := apdu.FindTagN(tlv, 1, apdu.Tag{0x30}, apdu.Tag{0x02})
+	// Look for DER-encoded ECDSA signature: 0x30 containing two 0x02 INTEGERs
+	if r.NextTagIs(tlv.TLV_ECDSA_TEMPLATE) {
+		seqData, err := r.ReadPrimitive(tlv.TLV_ECDSA_TEMPLATE)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		if len(s) > 32 {
-			s = s[len(s)-32:]
+		inner := tlv.NewBerTlvReader(seqData)
+		rVal, err := inner.ReadPrimitive(tlv.TLV_INT)
+		if err != nil {
+			return nil, nil, err
+		}
+		if len(rVal) > 32 {
+			rVal = rVal[len(rVal)-32:]
 		}
 
-		return r, s, nil
+		sVal, err := inner.ReadPrimitive(tlv.TLV_INT)
+		if err != nil {
+			return nil, nil, err
+		}
+		if len(sVal) > 32 {
+			sVal = sVal[len(sVal)-32:]
+		}
+
+		return rVal, sVal, nil
 	}
 
 	// Fall back to Schnorr signature: tag 0x88 contains raw 64 bytes (r||s)
-	schnorr, err := apdu.FindTag(tlv, apdu.Tag{TagSchnorrSignature})
+	schnorr, err := r.ReadPrimitiveIfPresent(TagSchnorrSignature)
 	if err != nil {
 		return nil, nil, err
+	}
+	if len(schnorr) == 0 {
+		return nil, nil, errors.New("no ECDSA or Schnorr signature found")
 	}
 
 	if len(schnorr) != 64 {
@@ -106,24 +126,25 @@ func (s *Signature) V() byte {
 }
 
 func parseLegacySignature(message, template []byte) (*Signature, error) {
-	pubKey, err := apdu.FindTag(template, apdu.Tag{0x80})
+	r := tlv.NewBerTlvReader(template)
+
+	pubKey, err := r.ReadPrimitive(tlv.TLV_PUB_KEY)
 	if err != nil {
 		return nil, err
 	}
 
-	r, s, err := DERSignatureToRS(template)
+	rVal, sVal, err := DERSignatureToRS(r.PeekUnread())
 	if err != nil {
 		return nil, err
 	}
 
 	// Schnorr signatures (tag 0x88) don't support pubkey recovery via ECDSA.
 	// The card already provides the pubkey in tag 0x80, so we skip calculateV.
-	_, isSchnorrErr := apdu.FindTag(template, apdu.Tag{TagSchnorrSignature})
-	isSchnorr := isSchnorrErr == nil
+	isSchnorr := r.NextTagIs(TagSchnorrSignature)
 
 	var v byte
 	if !isSchnorr {
-		v, err = calculateV(message, pubKey, r, s)
+		v, err = calculateV(message, pubKey, rVal, sVal)
 		if err != nil {
 			return nil, err
 		}
@@ -131,8 +152,8 @@ func parseLegacySignature(message, template []byte) (*Signature, error) {
 
 	return &Signature{
 		pubKey: pubKey,
-		r:      r,
-		s:      s,
+		r:      rVal,
+		s:      sVal,
 		v:      v,
 	}, nil
 }
