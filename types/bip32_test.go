@@ -3,6 +3,7 @@ package types
 import (
 	"testing"
 
+	"github.com/keycard-tech/keycard-go/v4/hexutils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -22,14 +23,14 @@ func TestBip32KeyPairFromBinarySeed(t *testing.T) {
 func TestBip32KeyPairFromBinarySeedKnownVector(t *testing.T) {
 	// BIP32 test vector from the spec
 	// seed: 000102030405060708090a0b0c0d0e0f
-	seed := hexDecode("000102030405060708090a0b0c0d0e0f")
+	seed := hexutils.MustHexToBytes("000102030405060708090a0b0c0d0e0f")
 	kp := Bip32KeyPairFromBinarySeed(seed)
 
 	// Expected master key (from BIP32 spec)
-	expectedPK := hexDecode("e8f32e723decf4051aefac8e2c93c9c5b214313817cdb01a1494b917c8436b35")
+	expectedPK := hexutils.MustHexToBytes("e8f32e723decf4051aefac8e2c93c9c5b214313817cdb01a1494b917c8436b35")
 	assert.Equal(t, expectedPK, kp.PrivateKey())
 
-	expectedCC := hexDecode("873dff81c02f525623fd1fe5167eac3a55a049de3d314bb42ee227ffed37d508")
+	expectedCC := hexutils.MustHexToBytes("873dff81c02f525623fd1fe5167eac3a55a049de3d314bb42ee227ffed37d508")
 	assert.Equal(t, expectedCC, kp.ChainCode())
 }
 
@@ -99,22 +100,4 @@ func TestBip32KeyPairZeroize(t *testing.T) {
 	assert.True(t, allZero)
 }
 
-func hexDecode(hex string) []byte {
-	data := make([]byte, len(hex)/2)
-	for i := 0; i < len(hex); i += 2 {
-		var v byte
-		for j := 0; j < 2; j++ {
-			v <<= 4
-			c := hex[i+j]
-			if c >= '0' && c <= '9' {
-				v |= c - '0'
-			} else if c >= 'a' && c <= 'f' {
-				v |= c - 'a' + 10
-			} else if c >= 'A' && c <= 'F' {
-				v |= c - 'A' + 10
-			}
-		}
-		data[i/2] = v
-	}
-	return data
-}
+

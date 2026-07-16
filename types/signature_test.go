@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/keycard-tech/keycard-go/v4/hexutils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -19,8 +20,8 @@ func TestRecoverPublicKey_Valid(t *testing.T) {
 	msg := sha256.Sum256([]byte("test message"))
 
 	// r and s from a known valid signature (recID=0)
-	r := hexDecode("6e2a45f5680aa8465c4273ea0c5d6f2c2fd01d2a69c4ac5b3c3e5a0b2d4e0a1b")
-	s := hexDecode("3c5e8f9a2b4d6e1c7f0a3b5d8e2c4f6a9b1d3e5f7a9c2d4e6f8a0b2c4d6e8f0a")
+	r := hexutils.MustHexToBytes("6e2a45f5680aa8465c4273ea0c5d6f2c2fd01d2a69c4ac5b3c3e5a0b2d4e0a1b")
+	s := hexutils.MustHexToBytes("3c5e8f9a2b4d6e1c7f0a3b5d8e2c4f6a9b1d3e5f7a9c2d4e6f8a0b2c4d6e8f0a")
 
 	// Try all recovery IDs
 	var found bool
@@ -38,8 +39,8 @@ func TestRecoverPublicKey_Valid(t *testing.T) {
 
 func TestRecoverPublicKey_Uncompressed(t *testing.T) {
 	msg := sha256.Sum256([]byte("test uncompressed"))
-	r := hexDecode("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2")
-	s := hexDecode("b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3")
+	r := hexutils.MustHexToBytes("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2")
+	s := hexutils.MustHexToBytes("b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3")
 
 	for recID := int32(0); recID <= 3; recID++ {
 		pubKey, err := RecoverPublicKey(recID, msg[:], r, s, false)

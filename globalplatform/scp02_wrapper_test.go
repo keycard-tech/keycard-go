@@ -10,10 +10,10 @@ import (
 )
 
 func TestSCP02Wrapper_Wrap(t *testing.T) {
-	macKey := hexutils.HexToBytes("2983BA77D709C2DAA1E6000ABCCAC951")
+	macKey := hexutils.MustHexToBytes("2983BA77D709C2DAA1E6000ABCCAC951")
 	w := NewSCP02Wrapper(macKey)
 
-	data := hexutils.HexToBytes("1d4de92eaf7a2c9f")
+	data := hexutils.MustHexToBytes("1d4de92eaf7a2c9f")
 	cmd := apdu.NewCommand(uint8(0x80), uint8(0x82), uint8(0x01), uint8(0x00), data)
 
 	// check initial icv
@@ -30,7 +30,7 @@ func TestSCP02Wrapper_Wrap(t *testing.T) {
 	// check icv generated from previous mac
 	assert.Equal(t, "8F9B0DF681C1D3EC", hexutils.BytesToHex(w.icv))
 
-	data = hexutils.HexToBytes("4F00")
+	data = hexutils.MustHexToBytes("4F00")
 	cmd = apdu.NewCommand(uint8(0x80), uint8(0xF2), uint8(0x80), uint8(0x02), data)
 	cmd.SetLe(0x00)
 	wrappedCmd, err = w.Wrap(cmd)

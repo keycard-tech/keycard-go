@@ -21,9 +21,9 @@ func TestECDH(t *testing.T) {
 }
 
 func TestDeriveSessionKeys(t *testing.T) {
-	secret := hexutils.HexToBytes("B410E816DA313545151807E25A830201FA389913A977066AB0C6DE0E8631E400")
-	pairingKey := hexutils.HexToBytes("544FF0B9B0737E4BFC4ECDFCE09F522B837051BBE4FFCEC494FA420D8525670E")
-	cardData := hexutils.HexToBytes("1D7C033E75E10EC578AB538F69F1B02538571BA3831441F1649E3F24B5B3E3E71D7BC2D6A3D02FC8CB2FBB3FD8711BB5")
+	secret := hexutils.MustHexToBytes("B410E816DA313545151807E25A830201FA389913A977066AB0C6DE0E8631E400")
+	pairingKey := hexutils.MustHexToBytes("544FF0B9B0737E4BFC4ECDFCE09F522B837051BBE4FFCEC494FA420D8525670E")
+	cardData := hexutils.MustHexToBytes("1D7C033E75E10EC578AB538F69F1B02538571BA3831441F1649E3F24B5B3E3E71D7BC2D6A3D02FC8CB2FBB3FD8711BB5")
 
 	encKey, macKey, iv := DeriveSessionKeys(secret, pairingKey, cardData)
 
@@ -37,9 +37,9 @@ func TestDeriveSessionKeys(t *testing.T) {
 }
 
 func TestEncryptData(t *testing.T) {
-	data := hexutils.HexToBytes("A8A686D0E3290459BCB36088A8FD04A76BF13283BE4B1EAE2E1248EF609F94DC")
-	encKey := hexutils.HexToBytes("44D689AB4B18206F7EEE5439FB9A71A8A617406BA5259728D1EBC2786D24896C")
-	iv := hexutils.HexToBytes("9D3EF41EF1D221DD98A54AD5470F58F2")
+	data := hexutils.MustHexToBytes("A8A686D0E3290459BCB36088A8FD04A76BF13283BE4B1EAE2E1248EF609F94DC")
+	encKey := hexutils.MustHexToBytes("44D689AB4B18206F7EEE5439FB9A71A8A617406BA5259728D1EBC2786D24896C")
+	iv := hexutils.MustHexToBytes("9D3EF41EF1D221DD98A54AD5470F58F2")
 
 	encryptedData, err := EncryptData(data, encKey, iv)
 	assert.NoError(t, err)
@@ -49,9 +49,9 @@ func TestEncryptData(t *testing.T) {
 }
 
 func TestDecryptData(t *testing.T) {
-	encData := hexutils.HexToBytes("73B58B66372E3446E14A9F54BA59666DB432E9DD87D24F9B0525180EE52DA2106E0C70EED7CD42B5B313E4443D6AC90D")
-	encKey := hexutils.HexToBytes("D93D8E6164196D5C5B5F84F10E4B90D98F8D282ED145513ED666AA55C9871E79")
-	iv := hexutils.HexToBytes("F959B1220333046D3C47D61B1E1B891B")
+	encData := hexutils.MustHexToBytes("73B58B66372E3446E14A9F54BA59666DB432E9DD87D24F9B0525180EE52DA2106E0C70EED7CD42B5B313E4443D6AC90D")
+	encKey := hexutils.MustHexToBytes("D93D8E6164196D5C5B5F84F10E4B90D98F8D282ED145513ED666AA55C9871E79")
+	iv := hexutils.MustHexToBytes("F959B1220333046D3C47D61B1E1B891B")
 
 	data, err := DecryptData(encData, encKey, iv)
 	assert.NoError(t, err)
@@ -80,15 +80,15 @@ func TestRemovePadding(t *testing.T) {
 	}
 
 	for _, s := range scenarios {
-		res := removePadding(8, hexutils.HexToBytes(s.data))
+		res := removePadding(8, hexutils.MustHexToBytes(s.data))
 		assert.Equal(t, s.expected, hexutils.BytesToHex(res))
 	}
 }
 
 func TestCalculateMAC(t *testing.T) {
-	macKey := hexutils.HexToBytes("2FB70219E6635EE0958AB3F7A428BA87E8CD6E6F873A5725A55F25B102D0F1F7")
-	meta := hexutils.HexToBytes("00000000000000000000000000000000")
-	data := hexutils.HexToBytes("D545A5E95963B6BCED86A6AE826D34C5E06AC64A1217EFFA1415A96674A82500")
+	macKey := hexutils.MustHexToBytes("2FB70219E6635EE0958AB3F7A428BA87E8CD6E6F873A5725A55F25B102D0F1F7")
+	meta := hexutils.MustHexToBytes("00000000000000000000000000000000")
+	data := hexutils.MustHexToBytes("D545A5E95963B6BCED86A6AE826D34C5E06AC64A1217EFFA1415A96674A82500")
 
 	mac, err := CalculateMAC(meta, data, macKey)
 	assert.NoError(t, err)
@@ -99,9 +99,9 @@ func TestCalculateMAC_MatchesLegacy(t *testing.T) {
 	// Verify that CalculateMAC produces the same result as the legacy
 	// CalculateMac for the test vector used in TestSecureChannelV1_Send.
 	// The legacy function modifies its inputs in-place, so we pass copies.
-	macKey := hexutils.HexToBytes("2FB70219E6635EE0958AB3F7A428BA87E8CD6E6F873A5725A55F25B102D0F1F7")
-	meta := hexutils.HexToBytes("00000000000000000000000000000000")
-	data := hexutils.HexToBytes("D545A5E95963B6BCED86A6AE826D34C5E06AC64A1217EFFA1415A96674A82500")
+	macKey := hexutils.MustHexToBytes("2FB70219E6635EE0958AB3F7A428BA87E8CD6E6F873A5725A55F25B102D0F1F7")
+	meta := hexutils.MustHexToBytes("00000000000000000000000000000000")
+	data := hexutils.MustHexToBytes("D545A5E95963B6BCED86A6AE826D34C5E06AC64A1217EFFA1415A96674A82500")
 
 	// Legacy (modifies inputs)
 	metaLegacy := make([]byte, len(meta))

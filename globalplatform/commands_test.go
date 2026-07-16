@@ -18,7 +18,7 @@ func TestNewCommandSelect(t *testing.T) {
 }
 
 func TestNewCommandInitializeUpdate(t *testing.T) {
-	challenge := hexutils.HexToBytes("010203")
+	challenge := hexutils.MustHexToBytes("010203")
 	cmd := NewCommandInitializeUpdate(challenge)
 
 	assert.Equal(t, uint8(0x80), cmd.Cla)
@@ -29,9 +29,9 @@ func TestNewCommandInitializeUpdate(t *testing.T) {
 }
 
 func TestCalculateHostCryptogram(t *testing.T) {
-	encKey := hexutils.HexToBytes("0EF72A1065236DD6CAC718D5E3F379A4")
-	cardChallenge := hexutils.HexToBytes("0076a6c0d55e9535")
-	hostChallenge := hexutils.HexToBytes("266195e638da1b95")
+	encKey := hexutils.MustHexToBytes("0EF72A1065236DD6CAC718D5E3F379A4")
+	cardChallenge := hexutils.MustHexToBytes("0076a6c0d55e9535")
+	hostChallenge := hexutils.MustHexToBytes("266195e638da1b95")
 
 	result, err := calculateHostCryptogram(encKey, cardChallenge, hostChallenge)
 	assert.NoError(t, err)
@@ -41,9 +41,9 @@ func TestCalculateHostCryptogram(t *testing.T) {
 }
 
 func TestNewCommandExternalAuthenticate(t *testing.T) {
-	encKey := hexutils.HexToBytes("8D289AFE0AB9C45B1C76DEEA182966F4")
-	cardChallenge := hexutils.HexToBytes("000f3fd65d4d6e45")
-	hostChallenge := hexutils.HexToBytes("cf307b6719bf224d")
+	encKey := hexutils.MustHexToBytes("8D289AFE0AB9C45B1C76DEEA182966F4")
+	cardChallenge := hexutils.MustHexToBytes("000f3fd65d4d6e45")
+	hostChallenge := hexutils.MustHexToBytes("cf307b6719bf224d")
 
 	cmd, err := NewCommandExternalAuthenticate(encKey, cardChallenge, hostChallenge)
 	assert.NoError(t, err)
@@ -55,7 +55,7 @@ func TestNewCommandExternalAuthenticate(t *testing.T) {
 }
 
 func TestNewCommandDelete(t *testing.T) {
-	aid := hexutils.HexToBytes("0102030405")
+	aid := hexutils.MustHexToBytes("0102030405")
 	cmd := NewCommandDelete(aid, P2DeleteObject)
 	assert.Equal(t, uint8(0x80), cmd.Cla)
 	assert.Equal(t, uint8(0xE4), cmd.Ins)
@@ -67,8 +67,8 @@ func TestNewCommandDelete(t *testing.T) {
 }
 
 func TestNewCommandInstallForLoad(t *testing.T) {
-	aid := hexutils.HexToBytes("53746174757357616C6C6574")
-	sdaid := hexutils.HexToBytes("A000000151000000")
+	aid := hexutils.MustHexToBytes("53746174757357616C6C6574")
+	sdaid := hexutils.MustHexToBytes("A000000151000000")
 	cmd := NewCommandInstallForLoad(aid, sdaid)
 	assert.Equal(t, uint8(0x80), cmd.Cla)
 	assert.Equal(t, uint8(0xE6), cmd.Ins)
@@ -80,10 +80,10 @@ func TestNewCommandInstallForLoad(t *testing.T) {
 }
 
 func TestNewCommandInstallForInstall(t *testing.T) {
-	pkgAID := hexutils.HexToBytes("53746174757357616C6C6574")
-	appletAID := hexutils.HexToBytes("53746174757357616C6C6574417070")
-	instanceAID := hexutils.HexToBytes("53746174757357616C6C6574417070")
-	params := hexutils.HexToBytes("AABBCC")
+	pkgAID := hexutils.MustHexToBytes("53746174757357616C6C6574")
+	appletAID := hexutils.MustHexToBytes("53746174757357616C6C6574417070")
+	instanceAID := hexutils.MustHexToBytes("53746174757357616C6C6574417070")
+	params := hexutils.MustHexToBytes("AABBCC")
 
 	cmd := NewCommandInstallForInstall(pkgAID, appletAID, instanceAID, params)
 	assert.Equal(t, uint8(0x80), cmd.Cla)
@@ -96,7 +96,7 @@ func TestNewCommandInstallForInstall(t *testing.T) {
 }
 
 func TestNewCommandStatus(t *testing.T) {
-	aid := hexutils.HexToBytes("AABBCC")
+	aid := hexutils.MustHexToBytes("AABBCC")
 	cmd := NewCommandGetStatus(aid, P1GetStatusApplications)
 	assert.Equal(t, uint8(0x80), cmd.Cla)
 	assert.Equal(t, uint8(0xF2), cmd.Ins)

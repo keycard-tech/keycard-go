@@ -8,7 +8,7 @@ import (
 )
 
 func TestParseResponse(t *testing.T) {
-	raw := hexutils.HexToBytes("000002650183039536622002003b5e508f751c0af3016e3fbc23d3a69000")
+	raw := hexutils.MustHexToBytes("000002650183039536622002003b5e508f751c0af3016e3fbc23d3a69000")
 	resp, err := ParseResponse(raw)
 
 	assert.NoError(t, err)
@@ -21,13 +21,13 @@ func TestParseResponse(t *testing.T) {
 }
 
 func TestParseResponse_BadData(t *testing.T) {
-	raw := hexutils.HexToBytes("")
+	raw := hexutils.MustHexToBytes("")
 	_, err := ParseResponse(raw)
 	assert.Equal(t, ErrBadRawResponse, err)
 }
 
 func TestResp_IsOK(t *testing.T) {
-	raw := hexutils.HexToBytes("01029000")
+	raw := hexutils.MustHexToBytes("01029000")
 	resp, err := ParseResponse(raw)
 	assert.NoError(t, err)
 	assert.True(t, resp.IsOK())

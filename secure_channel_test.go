@@ -23,13 +23,13 @@ func TestSecureChannelV1_Send(t *testing.T) {
 	c := &fakeChannel{}
 	sc := &SecureChannelV1{
 		c:      c,
-		encKey: hexutils.HexToBytes("FDBCB1637597CF3F8F5E8263007D4E45F64C12D44066D4576EB1443D60AEF441"),
-		macKey: hexutils.HexToBytes("2FB70219E6635EE0958AB3F7A428BA87E8CD6E6F873A5725A55F25B102D0F1F7"),
-		iv:     hexutils.HexToBytes("627E64358FA9BDCDAD4442BD8006E0A5"),
+		encKey: hexutils.MustHexToBytes("FDBCB1637597CF3F8F5E8263007D4E45F64C12D44066D4576EB1443D60AEF441"),
+		macKey: hexutils.MustHexToBytes("2FB70219E6635EE0958AB3F7A428BA87E8CD6E6F873A5725A55F25B102D0F1F7"),
+		iv:     hexutils.MustHexToBytes("627E64358FA9BDCDAD4442BD8006E0A5"),
 		open:   true,
 	}
 
-	data := hexutils.HexToBytes("D545A5E95963B6BCED86A6AE826D34C5E06AC64A1217EFFA1415A96674A82500")
+	data := hexutils.MustHexToBytes("D545A5E95963B6BCED86A6AE826D34C5E06AC64A1217EFFA1415A96674A82500")
 
 	cmd := NewCommandMutuallyAuthenticate(data)
 	sc.Send(cmd)
@@ -76,9 +76,9 @@ func TestSecureChannelV1_TransmitSendErrorClosesSession(t *testing.T) {
 	sc := NewSecureChannel(nil)
 	sc.open = true
 	sc.established = true
-	sc.encKey = hexutils.HexToBytes("FDBCB1637597CF3F8F5E8263007D4E45F64C12D44066D4576EB1443D60AEF441")
-	sc.macKey = hexutils.HexToBytes("2FB70219E6635EE0958AB3F7A428BA87E8CD6E6F873A5725A55F25B102D0F1F7")
-	sc.iv = hexutils.HexToBytes("627E64358FA9BDCDAD4442BD8006E0A5")
+	sc.encKey = hexutils.MustHexToBytes("FDBCB1637597CF3F8F5E8263007D4E45F64C12D44066D4576EB1443D60AEF441")
+	sc.macKey = hexutils.MustHexToBytes("2FB70219E6635EE0958AB3F7A428BA87E8CD6E6F873A5725A55F25B102D0F1F7")
+	sc.iv = hexutils.MustHexToBytes("627E64358FA9BDCDAD4442BD8006E0A5")
 
 	cmd := apdu.NewCommand(0x80, 0xF2, 0x00, 0x00, nil)
 	_, err := sc.Transmit(c, cmd)
@@ -94,9 +94,9 @@ func TestSecureChannelV1_TransmitShortResponseClosesSession(t *testing.T) {
 	sc := NewSecureChannel(nil)
 	sc.open = true
 	sc.established = true
-	sc.encKey = hexutils.HexToBytes("FDBCB1637597CF3F8F5E8263007D4E45F64C12D44066D4576EB1443D60AEF441")
-	sc.macKey = hexutils.HexToBytes("2FB70219E6635EE0958AB3F7A428BA87E8CD6E6F873A5725A55F25B102D0F1F7")
-	sc.iv = hexutils.HexToBytes("627E64358FA9BDCDAD4442BD8006E0A5")
+	sc.encKey = hexutils.MustHexToBytes("FDBCB1637597CF3F8F5E8263007D4E45F64C12D44066D4576EB1443D60AEF441")
+	sc.macKey = hexutils.MustHexToBytes("2FB70219E6635EE0958AB3F7A428BA87E8CD6E6F873A5725A55F25B102D0F1F7")
+	sc.iv = hexutils.MustHexToBytes("627E64358FA9BDCDAD4442BD8006E0A5")
 
 	cmd := apdu.NewCommand(0x80, 0xF2, 0x00, 0x00, nil)
 	_, err := sc.Transmit(shortChannel, cmd)
@@ -118,9 +118,9 @@ func TestSecureChannelV1_TransmitDecryptFailureClosesSession(t *testing.T) {
 	sc := NewSecureChannel(nil)
 	sc.open = true
 	sc.established = true
-	sc.encKey = hexutils.HexToBytes("FDBCB1637597CF3F8F5E8263007D4E45F64C12D44066D4576EB1443D60AEF441")
-	sc.macKey = hexutils.HexToBytes("2FB70219E6635EE0958AB3F7A428BA87E8CD6E6F873A5725A55F25B102D0F1F7")
-	sc.iv = hexutils.HexToBytes("627E64358FA9BDCDAD4442BD8006E0A5")
+	sc.encKey = hexutils.MustHexToBytes("FDBCB1637597CF3F8F5E8263007D4E45F64C12D44066D4576EB1443D60AEF441")
+	sc.macKey = hexutils.MustHexToBytes("2FB70219E6635EE0958AB3F7A428BA87E8CD6E6F873A5725A55F25B102D0F1F7")
+	sc.iv = hexutils.MustHexToBytes("627E64358FA9BDCDAD4442BD8006E0A5")
 
 	cmd := apdu.NewCommand(0x80, 0xF2, 0x00, 0x00, nil)
 	_, err := sc.Transmit(garbageChannel, cmd)
@@ -147,9 +147,9 @@ func TestSecureChannelV1_TransmitSecurityConditionNotSatisfied(t *testing.T) {
 	sc := NewSecureChannel(nil)
 	sc.open = true
 	sc.established = true
-	sc.encKey = hexutils.HexToBytes("FDBCB1637597CF3F8F5E8263007D4E45F64C12D44066D4576EB1443D60AEF441")
-	sc.macKey = hexutils.HexToBytes("2FB70219E6635EE0958AB3F7A428BA87E8CD6E6F873A5725A55F25B102D0F1F7")
-	sc.iv = hexutils.HexToBytes("627E64358FA9BDCDAD4442BD8006E0A5")
+	sc.encKey = hexutils.MustHexToBytes("FDBCB1637597CF3F8F5E8263007D4E45F64C12D44066D4576EB1443D60AEF441")
+	sc.macKey = hexutils.MustHexToBytes("2FB70219E6635EE0958AB3F7A428BA87E8CD6E6F873A5725A55F25B102D0F1F7")
+	sc.iv = hexutils.MustHexToBytes("627E64358FA9BDCDAD4442BD8006E0A5")
 
 	cmd := apdu.NewCommand(0x80, 0xF2, 0x00, 0x00, nil)
 	resp, err := sc.Transmit(secChannel, cmd)
@@ -162,9 +162,9 @@ func TestSecureChannelV1_ResetClearsKeys(t *testing.T) {
 	sc := NewSecureChannel(nil)
 	sc.open = true
 	sc.established = true
-	sc.encKey = hexutils.HexToBytes("FDBCB1637597CF3F8F5E8263007D4E45F64C12D44066D4576EB1443D60AEF441")
-	sc.macKey = hexutils.HexToBytes("2FB70219E6635EE0958AB3F7A428BA87E8CD6E6F873A5725A55F25B102D0F1F7")
-	sc.iv = hexutils.HexToBytes("627E64358FA9BDCDAD4442BD8006E0A5")
+	sc.encKey = hexutils.MustHexToBytes("FDBCB1637597CF3F8F5E8263007D4E45F64C12D44066D4576EB1443D60AEF441")
+	sc.macKey = hexutils.MustHexToBytes("2FB70219E6635EE0958AB3F7A428BA87E8CD6E6F873A5725A55F25B102D0F1F7")
+	sc.iv = hexutils.MustHexToBytes("627E64358FA9BDCDAD4442BD8006E0A5")
 
 	sc.Reset()
 

@@ -3,6 +3,7 @@ package types
 import (
 	"testing"
 
+	"github.com/keycard-tech/keycard-go/v4/hexutils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -41,7 +42,7 @@ func TestMnemonicBinarySeedFromPhrase(t *testing.T) {
 	seed := BinarySeedFromPhrase(phrase, "")
 	// Verified against python-mnemonic library output
 	expectedHex := "878386efb78845b3355bd15ea4d39ef97d179cb712b77d5c12b6be415fffeffe5f377ba02bf3f8544ab800b955e51fbff09828f682052a20faa6addbbddfb096"
-	expected := hexDecode(expectedHex)
+	expected := hexutils.MustHexToBytes(expectedHex)
 	assert.Equal(t, expected, seed)
 }
 

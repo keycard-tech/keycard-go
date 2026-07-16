@@ -13,7 +13,7 @@ func TestNewCommand(t *testing.T) {
 	var ins uint8 = 0x50
 	var p1 uint8 = 1
 	var p2 uint8 = 2
-	data := hexutils.HexToBytes("84762336c5187fe8")
+	data := hexutils.MustHexToBytes("84762336c5187fe8")
 
 	cmd := NewCommand(cla, ins, p1, p2, data)
 
@@ -30,7 +30,7 @@ func TestNewCommand(t *testing.T) {
 }
 
 func TestParseCommand(t *testing.T) {
-	raw := hexutils.HexToBytes("0102030402050607")
+	raw := hexutils.MustHexToBytes("0102030402050607")
 	cmd, err := ParseCommand(raw)
 	require.Nil(t, err)
 	assert.Equal(t, uint8(0x01), cmd.Cla)
