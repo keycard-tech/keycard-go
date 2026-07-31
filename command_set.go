@@ -664,10 +664,33 @@ func (cs *CommandSet) SignWithPath(data []byte, path string) (*types.Signature, 
 	return cs.SignWithPathAndAlgo(data, path, P2SignECDSA)
 }
 
+func (cs *CommandSet) SignBIP341Schnorr(hash []byte, tweak []byte, path string) (*types.Signature, error) {
+	if len(hash) != 32 {
+		return nil, fmt.Errorf("hash length must be 32, got %d", len(hash))
+	}
+	
+	if len(tweak) != 32 {
+		return nil, fmt.Errorf("tweak length must be 32, got %d", len(tweak))
+	}
+
+	data := make([]byte, 0, len(hash)+len(tweak))
+	data = append(data, hash...)
+	data = append(data, tweak...)	
+	return cs.SignWithPathAndAlgo(data, path, P2SignBIP340Schnorr)
+}
+
 // SignWithPathAndAlgo signs a 32-byte hash with a derived key path and explicit algorithm.
 func (cs *CommandSet) SignWithPathAndAlgo(data []byte, path string, algo uint8) (*types.Signature, error) {
-	if len(data) != 32 {
-		return nil, fmt.Errorf("data length must be 32, got %d", len(data))
+	if algo == P2SignBIP340Schnorr {
+		if len(data) == 32 {
+			data = append(data, make([]byte, 32)...)
+		} else if len(data) != 64 {
+			return nil, fmt.Errorf("data length must be 32 or 64 when using Schnorr, got %d", len(data))
+		}
+	} else {
+		if len(data) != 32 {
+			return nil, fmt.Errorf("data length must be 32, got %d", len(data))
+		}
 	}
 
 	kp, err := derivationpath.KeyPathFromString(path)
