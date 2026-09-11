@@ -617,6 +617,62 @@ func (cs *CommandSet) ExportLEEKey(keypath string) ([]byte, error) {
 	return resp.Data, nil
 }
 
+// ExportLEEKeyParsed exports an LEE key at the given BIP32 path and parses the
+// response into a types.LeeKey.
+func (cs *CommandSet) ExportLEEKeyParsed(keypath string) (*types.LeeKey, error) {
+	data, err := cs.ExportLEEKey(keypath)
+	if err != nil {
+		return nil, err
+	}
+	return types.ParseLeeKey(data)
+}
+
+// ECDH computes an ECDH shared secret between the key derived at the given
+// path and a peer public key.
+//
+// The card only permits derivation under the NIP-44 (m/44'/1237') and
+// EIP-1581 (m/43'/60'/1581') prefixes at a depth of at least 5 components;
+// any other path is refused by the card.
+//
+// The returned data is the raw x-coordinate of the resulting point (32 bytes),
+// not an encryption key. Protocols are expected to run it through a KDF
+// host-side (NIP-44 uses HKDF-extract with salt "nip44-v2").
+func (cs *CommandSet) ECDH(peerPublicKey []byte, keypath string) ([]byte, error) {
+	kp, err := derivationpath.KeyPathFromString(keypath)
+	if err != nil {
+		return nil, err
+	}
+	if kp.Source() != derivationpath.SourceMaster {
+		return nil, fmt.Errorf("ECDH requires an absolute path derived from the master key")
+	}
+	return cs.ECDHRaw(peerPublicKey, kp.Data())
+}
+
+// ECDHRaw computes an ECDH shared secret using raw path bytes.
+//
+// The peer public key must be an uncompressed secp256k1 point (0x04 || X || Y,
+// 65 bytes) and the path is appended verbatim.
+func (cs *CommandSet) ECDHRaw(peerPublicKey []byte, path []byte) ([]byte, error) {
+	if len(peerPublicKey) != Secp256k1UncompressedPubKeySize ||
+		peerPublicKey[0] != UncompressedPointTag {
+		return nil, fmt.Errorf(
+			"peer public key must be a %d byte uncompressed point (0x04 || X || Y), got %d bytes",
+			Secp256k1UncompressedPubKeySize, len(peerPublicKey),
+		)
+	}
+
+	data := make([]byte, 0, len(peerPublicKey)+len(path))
+	data = append(data, peerPublicKey...)
+	data = append(data, path...)
+
+	// P1 is always P1SignDerive (0x01) and P2 is always P2ECDHRawSecret.
+	resp, err := cs.sendProtected(InsECDH, P1SignDerive, P2ECDHRawSecret, data)
+	if err = apdu.CheckOK(resp, err); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
 // ExportBIP85 exports a BIP85 derived key at the given path.
 func (cs *CommandSet) ExportBIP85(keypath string, length uint8) ([]byte, error) {
 	kp, err := derivationpath.KeyPathFromString(keypath)

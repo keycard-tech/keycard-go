@@ -36,6 +36,18 @@ const TLV_PRIV_KEY uint8 = 0x81
 // Chain code
 const TLV_CHAIN_CODE uint8 = 0x82
 
+// LEE nullifier secret key (NSK)
+const TLV_LEE_NSK uint8 = 0x83
+
+// LEE authorization secret key (ASK)
+const TLV_LEE_ASK uint8 = 0x84
+
+// LEE viewing seed (diversifier, VSK_D)
+const TLV_LEE_VSK_D uint8 = 0x85
+
+// LEE viewing seed (nullifier, VSK_Z)
+const TLV_LEE_VSK_Z uint8 = 0x86
+
 // Certificate
 const TLV_CERT uint8 = 0x8A
 

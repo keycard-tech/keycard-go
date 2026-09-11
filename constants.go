@@ -57,6 +57,7 @@ const (
 	InsExportKey            = 0xC2
 	InsExportLEE            = 0xC3 // Export LEE key
 	InsExportBIP85          = 0xC4 // Export BIP85 derived key
+	InsECDH                 = 0xC5 // ECDH key agreement
 	InsGetData              = 0xCA
 	InsStoreData            = 0xE2
 	InsGetChallenge         = 0x84 // Get challenge
@@ -140,6 +141,11 @@ const (
 	P2ExportKeyExtendedPublic   = 0x02
 )
 
+// ECDH P2 values.
+const (
+	P2ECDHRawSecret = 0x00 // Return the raw shared secret (x-coordinate of the resulting point)
+)
+
 // PAIR P1 values.
 const (
 	P1PairingFirstStep  = 0x00
@@ -208,6 +214,19 @@ var DefaultCAPublicKey = [33]byte{
 
 // PairingPasswordSalt is the salt used for deriving the pairing secret.
 const PairingPasswordSalt = "Keycard Pairing Password Salt"
+
+// UncompressedPointTag is the uncompressed secp256k1 point tag (the 0x04 prefix byte).
+const UncompressedPointTag = 0x04
+
+// Secp256k1UncompressedPubKeySize is the length of an uncompressed secp256k1
+// public key (0x04 || X || Y, 65 bytes).
+const Secp256k1UncompressedPubKeySize = 65
+
+// NIP44Prefix is the BIP32 prefix for NIP-44 paths (m/44'/1237').
+var NIP44Prefix = []byte{0x80, 0x00, 0x00, 0x2C, 0x80, 0x00, 0x04, 0xD5}
+
+// EIP1581Prefix is the BIP32 prefix for EIP-1581 paths (m/43'/60'/1581').
+var EIP1581Prefix = []byte{0x80, 0x00, 0x00, 0x2B, 0x80, 0x00, 0x00, 0x3C, 0x80, 0x00, 0x06, 0x2D}
 
 // MnemonicSeedPrefix is the BIP39 mnemonic seed derivation prefix.
 const MnemonicSeedPrefix = "mnemonic"

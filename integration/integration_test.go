@@ -744,3 +744,231 @@ func paddingBytes(b []byte) []byte {
 	copy(padded[32-len(b):], b)
 	return padded
 }
+
+// ============================================================================
+// TestIntegrationECDFlow — ECDH key agreement (NIP-44 / EIP-1581 paths only).
+// ============================================================================
+
+// TestIntegrationECDFlow verifies the ECDH command on the NIP-44 path against a
+// host-side computation of the shared secret.
+//
+// Requires the KEYCARD_TEST_PIN environment variable set to this card's actual
+// PIN (defaults to "123456").
+func TestIntegrationECDFlow(t *testing.T) {
+	pin := os.Getenv("KEYCARD_TEST_PIN")
+	if pin == "" {
+		pin = "123456"
+	}
+
+	ch := newTestChannel(t)
+	kc := keycard.NewCommandSetWithCA(ch, testCAPublicKey)
+
+	// 1. Connect and select
+	if err := kc.Select(); err != nil {
+		t.Fatalf("SELECT failed: %v", err)
+	}
+	info := kc.AppInfo()
+	hasSecureChannel := info.HasSecureChannel()
+	hasMasterKey := len(info.KeyUID) > 0
+
+	// 2. Pair with default password (V1 only)
+	if hasSecureChannel {
+		if version, ok := kc.SecureChannelVersion(); ok && version == keycard.VersionV1 {
+			if err := kc.AutoPairWithSecret(keycard.PairingPasswordToSecret("KeycardDefaultPairing")); err != nil {
+				t.Fatalf("pairing failed: %v", err)
+			}
+		}
+	}
+
+	// 3. Open secure channel
+	if hasSecureChannel {
+		if err := kc.AutoOpenSecureChannel(); err != nil {
+			t.Fatalf("failed to open secure channel: %v", err)
+		}
+	}
+
+	// 4. Verify PIN
+	if err := kc.VerifyPIN(pin); err != nil {
+		t.Fatalf("PIN verification failed: %v", err)
+	}
+
+	// 5. Load a test master key if none is present
+	if !hasMasterKey {
+		const testMnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+		seed := types.BinarySeedFromPhrase(testMnemonic, "")
+		if _, err := kc.LoadSeed(seed); err != nil {
+			t.Fatalf("LoadSeed failed: %v", err)
+		}
+		t.Log("loaded test master key from mnemonic")
+	}
+
+	// 6. NIP-44 path
+	path := "m/44'/1237'/0'/0/0"
+
+	// 7. Export the card's public key at the NIP-44 path (public only)
+	exportedKey, err := kc.ExportKeyExtended(false, false, keycard.P2ExportKeyPublicOnly, path)
+	if err != nil {
+		t.Fatalf("ExportKey failed: %v", err)
+	}
+	cardPub := exportedKey.PubKey()
+	if len(cardPub) == 0 {
+		t.Fatal("exported public key is empty")
+	}
+
+	// 8. Host keypair
+	peerPriv, err := btcec.NewPrivateKey()
+	if err != nil {
+		t.Fatalf("failed to generate peer secret: %v", err)
+	}
+	peerPub := peerPriv.PubKey().SerializeUncompressed()
+
+	// 9. Card computes A_priv x B_pub
+	ecdhSecret, err := kc.ECDH(peerPub, path)
+	if err != nil {
+		t.Fatalf("ECDH failed: %v", err)
+	}
+	if len(ecdhSecret) != 32 {
+		t.Fatalf("ECDH shared secret must be 32 bytes, got %d", len(ecdhSecret))
+	}
+
+	// 10. Host computes B_priv x A_pub and compares the x-coordinate
+	cardPubKey, err := btcec.ParsePubKey(cardPub)
+	if err != nil {
+		t.Fatalf("failed to parse card public key: %v", err)
+	}
+	curve := btcec.S256()
+	sharedX, _ := curve.ScalarMult(cardPubKey.X(), cardPubKey.Y(), peerPriv.Serialize())
+	expected := paddingBytes(sharedX.Bytes())
+
+	if !bytes.Equal(ecdhSecret, expected) {
+		t.Fatalf("ECDH shared secret mismatch:\n  card: %s\n  host: %s",
+			hexutils.BytesToHexWithSpaces(ecdhSecret),
+			hexutils.BytesToHexWithSpaces(expected),
+		)
+	}
+	t.Log("ECDH shared secret verified")
+
+	// 11. Unpair (V1 only)
+	if hasSecureChannel {
+		if version, ok := kc.SecureChannelVersion(); ok && version == keycard.VersionV1 {
+			if err := kc.Unpair(0); err != nil {
+				t.Fatalf("unpairing failed: %v", err)
+			}
+		}
+	}
+}
+
+// ============================================================================
+// TestIntegrationLEEFlow — LEE (Lightweight Encryption Engine) key export.
+// ============================================================================
+
+// TestIntegrationLEEFlow loads a known LEE seed and validates the exported
+// public key and LEE-Keys v1 components against the applet's test vector.
+//
+// NOTE: This loads a specific LEE seed onto the card, replacing any existing
+// master key. Only run on a test card.
+func TestIntegrationLEEFlow(t *testing.T) {
+	pin := os.Getenv("KEYCARD_TEST_PIN")
+	if pin == "" {
+		pin = "000000"
+	}
+
+	ch := newTestChannel(t)
+	kc := keycard.NewCommandSetWithCA(ch, testCAPublicKey)
+
+	// LEE-Keys v1 test vector from the applet's LEE Keys test.
+	const leeMnemonic = "fan empower output between game genius forest bulk party small arm shuffle"
+	expectedPublic := hexutils.MustHexToBytes(
+		"0423134cb96d1f5ec2ec023c6462317eee077f54730b14911b2eca0f0474b42688339128c030ad646c818bb2779d2901f758a527be9b849760f8191c72cdcecf9d",
+	)
+	expectedASK := hexutils.MustHexToBytes("7b9530590b74199ec623fd74bedc5b981c8eb36205f9981980f80c7cefc99d7d")
+	expectedNSK := hexutils.MustHexToBytes("ef2b7994d905e72109f60de69ee212f82ed3b99d261916671337a8b744f7a515")
+	expectedVSKD := hexutils.MustHexToBytes("9bbdfc6def553c24cd50755f8c45e120a2210e66f8a3d2d2487d591158fe7439")
+	expectedVSKZ := hexutils.MustHexToBytes("bfabaa3ab7f9537b11035f6f1d31a3e9d2e85249f7e42e3053386c0b14b1384e")
+
+	path := "m/43'/60'"
+
+	// 1. Connect and select
+	if err := kc.Select(); err != nil {
+		t.Fatalf("SELECT failed: %v", err)
+	}
+	info := kc.AppInfo()
+	hasSecureChannel := info.HasSecureChannel()
+
+	// 2. Pair with default password (V1 only)
+	if hasSecureChannel {
+		if version, ok := kc.SecureChannelVersion(); ok && version == keycard.VersionV1 {
+			if err := kc.AutoPairWithSecret(keycard.PairingPasswordToSecret("KeycardDefaultPairing")); err != nil {
+				t.Fatalf("pairing failed: %v", err)
+			}
+		}
+	}
+
+	// 3. Open secure channel
+	if hasSecureChannel {
+		if err := kc.AutoOpenSecureChannel(); err != nil {
+			t.Fatalf("failed to open secure channel: %v", err)
+		}
+	}
+
+	// 4. Verify PIN
+	if err := kc.VerifyPIN(pin); err != nil {
+		t.Fatalf("PIN verification failed: %v", err)
+	}
+
+	// 5. Load the known LEE seed (replaces the current master key)
+	seed := types.BinarySeedFromPhrase(leeMnemonic, "")
+	if err := kc.LoadLEEKey(seed); err != nil {
+		t.Fatalf("LoadLEEKey failed: %v", err)
+	}
+
+	// 6. Export the public key at m/43'/60'
+	exportedKey, err := kc.ExportKeyExtended(false, false, keycard.P2ExportKeyPublicOnly, path)
+	if err != nil {
+		t.Fatalf("ExportKey failed: %v", err)
+	}
+	pubKey := exportedKey.PubKey()
+	if !bytes.Equal(pubKey, expectedPublic) {
+		t.Fatalf("LEE public key mismatch:\n  got:  %s\n  want: %s",
+			hexutils.BytesToHexWithSpaces(pubKey),
+			hexutils.BytesToHexWithSpaces(expectedPublic),
+		)
+	}
+
+	// 7. Export the LEE keys at m/43'/60' and validate the parsed components
+	leeData, err := kc.ExportLEEKey(path)
+	if err != nil {
+		t.Fatalf("ExportLEEKey failed: %v", err)
+	}
+	leeKey, err := types.ParseLeeKey(leeData)
+	if err != nil {
+		t.Fatalf("failed to parse LEE key: %v", err)
+	}
+
+	ask := leeKey.ASK()
+	if !bytes.Equal(ask[:], expectedASK) {
+		t.Fatalf("ASK mismatch:\n  got:  %s\n  want: %s", hexutils.BytesToHexWithSpaces(ask[:]), hexutils.BytesToHexWithSpaces(expectedASK))
+	}
+	nsk := leeKey.NSK()
+	if !bytes.Equal(nsk[:], expectedNSK) {
+		t.Fatalf("NSK mismatch:\n  got:  %s\n  want: %s", hexutils.BytesToHexWithSpaces(nsk[:]), hexutils.BytesToHexWithSpaces(expectedNSK))
+	}
+	vskD := leeKey.VSKD()
+	if !bytes.Equal(vskD[:], expectedVSKD) {
+		t.Fatalf("VSK_D mismatch:\n  got:  %s\n  want: %s", hexutils.BytesToHexWithSpaces(vskD[:]), hexutils.BytesToHexWithSpaces(expectedVSKD))
+	}
+	vskZ := leeKey.VSKZ()
+	if !bytes.Equal(vskZ[:], expectedVSKZ) {
+		t.Fatalf("VSK_Z mismatch:\n  got:  %s\n  want: %s", hexutils.BytesToHexWithSpaces(vskZ[:]), hexutils.BytesToHexWithSpaces(expectedVSKZ))
+	}
+	t.Log("LEE keys verified")
+
+	// 8. Unpair (V1 only)
+	if hasSecureChannel {
+		if version, ok := kc.SecureChannelVersion(); ok && version == keycard.VersionV1 {
+			if err := kc.Unpair(0); err != nil {
+				t.Fatalf("unpairing failed: %v", err)
+			}
+		}
+	}
+}
