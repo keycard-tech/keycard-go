@@ -159,7 +159,7 @@ func parseLegacySignature(message, template []byte) (*Signature, error) {
 }
 
 func calculateV(message, pubKey, r, s []byte) (v byte, err error) {
-	rs := append(r, s...)
+	rs := append(append([]byte{}, r...), s...)
 	for i := 0; i < 4; i++ {
 		v = byte(i)
 		sig := append(rs, v)
