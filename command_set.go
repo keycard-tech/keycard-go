@@ -360,7 +360,10 @@ func (cs *CommandSet) OpenSecureChannel() error {
 	}
 
 	pairingKey := pairing.Key()
-	encKey, macKey, iv := crypto.DeriveSessionKeys(scV1.Secret(), pairingKey[:], resp.Data)
+	encKey, macKey, iv, err := crypto.DeriveSessionKeys(scV1.Secret(), pairingKey[:], resp.Data)
+	if err != nil {
+		return fmt.Errorf("OPEN_SECURE_CHANNEL: %w", err)
+	}
 	scV1.Init(iv, encKey, macKey)
 
 	err = cs.mutualAuthenticate()

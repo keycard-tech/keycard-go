@@ -507,12 +507,11 @@ func (sc *SecureChannelV1) processOpenResponse(data []byte) error {
 	if sc.pairing == nil {
 		return errors.New("no pairing data available")
 	}
-	if len(data) < 48 {
-		return errors.New("OPEN_SECURE_CHANNEL response too short")
-	}
-
 	pairingKey := sc.pairing.Key()
-	encKey, macKey, iv := crypto.DeriveSessionKeys(sc.secret, pairingKey[:], data)
+	encKey, macKey, iv, err := crypto.DeriveSessionKeys(sc.secret, pairingKey[:], data)
+	if err != nil {
+		return fmt.Errorf("OPEN_SECURE_CHANNEL: %w", err)
+	}
 	sc.encKey = encKey
 	sc.macKey = macKey
 	sc.iv = iv

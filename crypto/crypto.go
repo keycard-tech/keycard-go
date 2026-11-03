@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"crypto/sha512"
 	"errors"
+	"fmt"
 
 	"github.com/ethereum/go-ethereum/crypto"
 	"golang.org/x/crypto/pbkdf2"
@@ -64,9 +65,20 @@ func OneShotEncrypt(pubKeyData, secret, data []byte) ([]byte, error) {
 	return encrypted, nil
 }
 
-func DeriveSessionKeys(secret, pairingKey, cardData []byte) ([]byte, []byte, []byte) {
-	salt := cardData[:32]
-	iv := cardData[32:]
+// The card's OPEN_SECURE_CHANNEL payload: KDF salt followed by the session IV.
+// Enforced here because a wrong IV length reaches cipher.NewCBCEncrypter, which
+// panics rather than erroring.
+const (
+	sessionSaltSize = 32
+	sessionDataSize = sessionSaltSize + aes.BlockSize
+)
+
+func DeriveSessionKeys(secret, pairingKey, cardData []byte) ([]byte, []byte, []byte, error) {
+	if len(cardData) != sessionDataSize {
+		return nil, nil, nil, fmt.Errorf("session card data must be %d bytes, got %d", sessionDataSize, len(cardData))
+	}
+	salt := cardData[:sessionSaltSize]
+	iv := cardData[sessionSaltSize:]
 
 	h := sha512.New()
 	h.Write(secret)
@@ -77,16 +89,19 @@ func DeriveSessionKeys(secret, pairingKey, cardData []byte) ([]byte, []byte, []b
 	encKey := data[:32]
 	macKey := data[32:]
 
-	return encKey, macKey, iv
+	return encKey, macKey, iv, nil
 }
 
 func EncryptData(data []byte, encKey []byte, iv []byte) ([]byte, error) {
-	data = appendPadding(16, data)
-
 	block, err := aes.NewCipher(encKey)
 	if err != nil {
 		return nil, err
 	}
+	if len(iv) != block.BlockSize() {
+		return nil, fmt.Errorf("IV must be %d bytes, got %d", block.BlockSize(), len(iv))
+	}
+
+	data = appendPadding(16, data)
 
 	ciphertext := make([]byte, len(data))
 	mode := cipher.NewCBCEncrypter(block, iv)
@@ -99,6 +114,13 @@ func DecryptData(data []byte, encKey []byte, iv []byte) ([]byte, error) {
 	block, err := aes.NewCipher(encKey)
 	if err != nil {
 		return nil, err
+	}
+	if len(iv) != block.BlockSize() {
+		return nil, fmt.Errorf("IV must be %d bytes, got %d", block.BlockSize(), len(iv))
+	}
+	// Zero length passes the block check but leaves no padding block to strip.
+	if len(data) == 0 || len(data)%block.BlockSize() != 0 {
+		return nil, fmt.Errorf("ciphertext must be a non-empty multiple of %d bytes, got %d", block.BlockSize(), len(data))
 	}
 
 	plaintext := make([]byte, len(data))

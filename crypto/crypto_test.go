@@ -25,7 +25,8 @@ func TestDeriveSessionKeys(t *testing.T) {
 	pairingKey := hexutils.MustHexToBytes("544FF0B9B0737E4BFC4ECDFCE09F522B837051BBE4FFCEC494FA420D8525670E")
 	cardData := hexutils.MustHexToBytes("1D7C033E75E10EC578AB538F69F1B02538571BA3831441F1649E3F24B5B3E3E71D7BC2D6A3D02FC8CB2FBB3FD8711BB5")
 
-	encKey, macKey, iv := DeriveSessionKeys(secret, pairingKey, cardData)
+	encKey, macKey, iv, err := DeriveSessionKeys(secret, pairingKey, cardData)
+	assert.NoError(t, err)
 
 	expectedIV := "1D7BC2D6A3D02FC8CB2FBB3FD8711BB5"
 	expectedEncKey := "4FF496554C01BAE0A52323E3481B448C99D43982118D95C6918FE0354D224B90"
@@ -34,6 +35,45 @@ func TestDeriveSessionKeys(t *testing.T) {
 	assert.Equal(t, expectedIV, hexutils.BytesToHex(iv))
 	assert.Equal(t, expectedEncKey, hexutils.BytesToHex(encKey))
 	assert.Equal(t, expectedMacKey, hexutils.BytesToHex(macKey))
+}
+
+// A card response longer than 48 bytes used to yield an oversized IV that only
+// blew up later, inside cipher.NewCBCEncrypter.
+func TestDeriveSessionKeys_BadCardDataLength(t *testing.T) {
+	secret := hexutils.MustHexToBytes("B410E816DA313545151807E25A830201FA389913A977066AB0C6DE0E8631E400")
+	pairingKey := hexutils.MustHexToBytes("544FF0B9B0737E4BFC4ECDFCE09F522B837051BBE4FFCEC494FA420D8525670E")
+
+	for _, n := range []int{0, 1, 32, 47, 49, 64, 200} {
+		encKey, macKey, iv, err := DeriveSessionKeys(secret, pairingKey, make([]byte, n))
+		assert.Error(t, err, "cardData of %d bytes must be rejected", n)
+		assert.Nil(t, encKey)
+		assert.Nil(t, macKey)
+		assert.Nil(t, iv)
+	}
+}
+
+func TestEncryptData_BadIVLength(t *testing.T) {
+	encKey := hexutils.MustHexToBytes("44D689AB4B18206F7EEE5439FB9A71A8A617406BA5259728D1EBC2786D24896C")
+	data := hexutils.MustHexToBytes("A8A686D0E3290459BCB36088A8FD04A7")
+
+	for _, n := range []int{0, 15, 17, 32} {
+		_, err := EncryptData(data, encKey, make([]byte, n))
+		assert.Error(t, err, "IV of %d bytes must be rejected", n)
+	}
+}
+
+func TestDecryptData_BadInputs(t *testing.T) {
+	encKey := hexutils.MustHexToBytes("D93D8E6164196D5C5B5F84F10E4B90D98F8D282ED145513ED666AA55C9871E79")
+	iv := hexutils.MustHexToBytes("F959B1220333046D3C47D61B1E1B891B")
+
+	_, err := DecryptData(hexutils.MustHexToBytes("73B58B"), encKey, iv)
+	assert.Error(t, err, "ciphertext that is not a whole number of blocks must be rejected")
+
+	_, err = DecryptData(hexutils.MustHexToBytes("73B58B66372E3446E14A9F54BA59666D"), encKey, make([]byte, 17))
+	assert.Error(t, err, "IV of the wrong length must be rejected")
+
+	_, err = DecryptData(nil, encKey, iv)
+	assert.Error(t, err, "empty ciphertext has no padding block to strip")
 }
 
 func TestEncryptData(t *testing.T) {

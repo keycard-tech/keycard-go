@@ -1,6 +1,8 @@
 package keycard
 
 import (
+	"bytes"
+	"crypto/aes"
 	"errors"
 	"testing"
 
@@ -8,6 +10,7 @@ import (
 	"github.com/keycard-tech/keycard-go/v4/hexutils"
 	"github.com/keycard-tech/keycard-go/v4/types"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type fakeChannel struct {
@@ -65,6 +68,32 @@ func TestSecureChannelV1_Pairing(t *testing.T) {
 	sc.SetPairing(pairing)
 	assert.Equal(t, pairing, sc.Pairing())
 	assert.Equal(t, uint8(5), sc.Pairing().Index())
+}
+
+// The length check here used to be "at least 48", so a longer response was
+// accepted and became an IV of the wrong size — which panicked inside
+// cipher.NewCBCEncrypter on the first protected command.
+func TestSecureChannelV1_ProcessOpenResponseLength(t *testing.T) {
+	newSC := func() *SecureChannelV1 {
+		sc := NewSecureChannel(nil)
+		sc.secret = bytes.Repeat([]byte{0xAA}, 32)
+		sc.SetPairing(types.NewPairing([32]byte{1, 2, 3}, 5))
+		return sc
+	}
+
+	for _, n := range []int{0, 32, 47, 49, 64, 200} {
+		sc := newSC()
+		assert.Error(t, sc.processOpenResponse(make([]byte, n)),
+			"response of %d bytes must be rejected", n)
+		assert.False(t, sc.IsOpen(), "rejected response must not open the session")
+	}
+
+	sc := newSC()
+	require.NoError(t, sc.processOpenResponse(make([]byte, 48)))
+	assert.Len(t, sc.iv, aes.BlockSize)
+
+	_, err := sc.ProtectedCommand(0x80, InsMutuallyAuthenticate, 0, 0, nil)
+	require.NoError(t, err)
 }
 
 // ============================================================================
