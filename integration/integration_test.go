@@ -246,6 +246,15 @@ func TestIntegrationFullSignFlow(t *testing.T) {
 			if err := kc.AutoPairWithSecret(secret); err != nil {
 				t.Fatalf("pairing failed: %v", err)
 			}
+			// Pairing consumes one of the card's limited pairing slots; V2
+			// has none, so this is registered only on the V1 path.
+			if p := kc.Pairing(); p != nil {
+				t.Cleanup(func() {
+					if err := kc.Unpair(p.Index()); err != nil {
+						t.Logf("release pairing slot %d: %v", p.Index(), err)
+					}
+				})
+			}
 		}
 	}
 
@@ -355,16 +364,6 @@ func TestIntegrationFullSignFlow(t *testing.T) {
 		}
 
 		t.Log("schnorr signature verified")
-	}
-
-	// 9. Unpair (V1 only)
-	if hasSecureChannel {
-		version, ok := kc.SecureChannelVersion()
-		if ok && version == keycard.VersionV1 {
-			if err := kc.Unpair(0); err != nil {
-				t.Logf("unpairing failed (non-critical): %v", err)
-			}
-		}
 	}
 }
 
@@ -774,31 +773,25 @@ func TestIntegrationECDFlow(t *testing.T) {
 		t.Fatalf("SELECT failed: %v", err)
 	}
 	info := kc.AppInfo()
+	if info.AppVersion() < 0x0400 {
+		t.Skipf("ECDH requires app version >= 4.0, got %s", info.AppVersionString())
+	}
 	hasSecureChannel := info.HasSecureChannel()
 	hasMasterKey := len(info.KeyUID) > 0
 
-	// 2. Pair with default password (V1 only)
-	if hasSecureChannel {
-		if version, ok := kc.SecureChannelVersion(); ok && version == keycard.VersionV1 {
-			if err := kc.AutoPairWithSecret(keycard.PairingPasswordToSecret("KeycardDefaultPairing")); err != nil {
-				t.Fatalf("pairing failed: %v", err)
-			}
-		}
-	}
-
-	// 3. Open secure channel
+	// 2. Open secure channel
 	if hasSecureChannel {
 		if err := kc.AutoOpenSecureChannel(); err != nil {
 			t.Fatalf("failed to open secure channel: %v", err)
 		}
 	}
 
-	// 4. Verify PIN
+	// 3. Verify PIN
 	if err := kc.VerifyPIN(pin); err != nil {
 		t.Fatalf("PIN verification failed: %v", err)
 	}
 
-	// 5. Load a test master key if none is present
+	// 4. Load a test master key if none is present
 	if !hasMasterKey {
 		const testMnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
 		seed := types.BinarySeedFromPhrase(testMnemonic, "")
@@ -808,10 +801,10 @@ func TestIntegrationECDFlow(t *testing.T) {
 		t.Log("loaded test master key from mnemonic")
 	}
 
-	// 6. NIP-44 path
+	// 5. NIP-44 path
 	path := "m/44'/1237'/0'/0/0"
 
-	// 7. Export the card's public key at the NIP-44 path (public only)
+	// 6. Export the card's public key at the NIP-44 path (public only)
 	exportedKey, err := kc.ExportKeyExtended(false, false, keycard.P2ExportKeyPublicOnly, path)
 	if err != nil {
 		t.Fatalf("ExportKey failed: %v", err)
@@ -821,14 +814,14 @@ func TestIntegrationECDFlow(t *testing.T) {
 		t.Fatal("exported public key is empty")
 	}
 
-	// 8. Host keypair
+	// 7. Host keypair
 	peerPriv, err := btcec.NewPrivateKey()
 	if err != nil {
 		t.Fatalf("failed to generate peer secret: %v", err)
 	}
 	peerPub := peerPriv.PubKey().SerializeUncompressed()
 
-	// 9. Card computes A_priv x B_pub
+	// 8. Card computes A_priv x B_pub
 	ecdhSecret, err := kc.ECDH(peerPub, path)
 	if err != nil {
 		t.Fatalf("ECDH failed: %v", err)
@@ -837,7 +830,7 @@ func TestIntegrationECDFlow(t *testing.T) {
 		t.Fatalf("ECDH shared secret must be 32 bytes, got %d", len(ecdhSecret))
 	}
 
-	// 10. Host computes B_priv x A_pub and compares the x-coordinate
+	// 9. Host computes B_priv x A_pub and compares the x-coordinate
 	cardPubKey, err := btcec.ParsePubKey(cardPub)
 	if err != nil {
 		t.Fatalf("failed to parse card public key: %v", err)
@@ -854,14 +847,6 @@ func TestIntegrationECDFlow(t *testing.T) {
 	}
 	t.Log("ECDH shared secret verified")
 
-	// 11. Unpair (V1 only)
-	if hasSecureChannel {
-		if version, ok := kc.SecureChannelVersion(); ok && version == keycard.VersionV1 {
-			if err := kc.Unpair(0); err != nil {
-				t.Fatalf("unpairing failed: %v", err)
-			}
-		}
-	}
 }
 
 // ============================================================================
@@ -899,36 +884,30 @@ func TestIntegrationLEEFlow(t *testing.T) {
 		t.Fatalf("SELECT failed: %v", err)
 	}
 	info := kc.AppInfo()
+	if info.AppVersion() < 0x0400 {
+		t.Skipf("LEE requires app version >= 4.0, got %s", info.AppVersionString())
+	}
 	hasSecureChannel := info.HasSecureChannel()
 
-	// 2. Pair with default password (V1 only)
-	if hasSecureChannel {
-		if version, ok := kc.SecureChannelVersion(); ok && version == keycard.VersionV1 {
-			if err := kc.AutoPairWithSecret(keycard.PairingPasswordToSecret("KeycardDefaultPairing")); err != nil {
-				t.Fatalf("pairing failed: %v", err)
-			}
-		}
-	}
-
-	// 3. Open secure channel
+	// 2. Open secure channel
 	if hasSecureChannel {
 		if err := kc.AutoOpenSecureChannel(); err != nil {
 			t.Fatalf("failed to open secure channel: %v", err)
 		}
 	}
 
-	// 4. Verify PIN
+	// 3. Verify PIN
 	if err := kc.VerifyPIN(pin); err != nil {
 		t.Fatalf("PIN verification failed: %v", err)
 	}
 
-	// 5. Load the known LEE seed (replaces the current master key)
+	// 4. Load the known LEE seed (replaces the current master key)
 	seed := types.BinarySeedFromPhrase(leeMnemonic, "")
 	if err := kc.LoadLEEKey(seed); err != nil {
 		t.Fatalf("LoadLEEKey failed: %v", err)
 	}
 
-	// 6. Export the public key at m/43'/60'
+	// 5. Export the public key at m/43'/60'
 	exportedKey, err := kc.ExportKeyExtended(false, false, keycard.P2ExportKeyPublicOnly, path)
 	if err != nil {
 		t.Fatalf("ExportKey failed: %v", err)
@@ -941,7 +920,7 @@ func TestIntegrationLEEFlow(t *testing.T) {
 		)
 	}
 
-	// 7. Export the LEE keys at m/43'/60' and validate the parsed components
+	// 6. Export the LEE keys at m/43'/60' and validate the parsed components
 	leeData, err := kc.ExportLEEKey(path)
 	if err != nil {
 		t.Fatalf("ExportLEEKey failed: %v", err)
@@ -969,12 +948,4 @@ func TestIntegrationLEEFlow(t *testing.T) {
 	}
 	t.Log("LEE keys verified")
 
-	// 8. Unpair (V1 only)
-	if hasSecureChannel {
-		if version, ok := kc.SecureChannelVersion(); ok && version == keycard.VersionV1 {
-			if err := kc.Unpair(0); err != nil {
-				t.Fatalf("unpairing failed: %v", err)
-			}
-		}
-	}
 }
