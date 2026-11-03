@@ -50,6 +50,8 @@ var testCAPublicKey = [33]byte{
 	0x43,
 }
 
+const defaultTestPIN = "123456"
+
 // ============================================================================
 // LoggingChannel — wraps a Channel and logs every APDU sent/received.
 // ============================================================================
@@ -221,7 +223,7 @@ func TestIntegrationSelectApplet(t *testing.T) {
 func TestIntegrationFullSignFlow(t *testing.T) {
 	pin := os.Getenv("KEYCARD_TEST_PIN")
 	if pin == "" {
-		pin = "123456"
+		pin = defaultTestPIN
 	}
 
 	ch := newTestChannel(t)
@@ -526,7 +528,7 @@ func TestIntegrationFactoryResetAndInit(t *testing.T) {
 func TestIntegrationBIP341TaprootSchnorr(t *testing.T) {
 	pin := os.Getenv("KEYCARD_TEST_PIN")
 	if pin == "" {
-		pin = "123456"
+		pin = defaultTestPIN
 	}
 
 	ch := newTestChannel(t)
@@ -753,11 +755,11 @@ func paddingBytes(b []byte) []byte {
 // host-side computation of the shared secret.
 //
 // Requires the KEYCARD_TEST_PIN environment variable set to this card's actual
-// PIN (defaults to "123456").
+// PIN (falls back to defaultTestPIN).
 func TestIntegrationECDFlow(t *testing.T) {
 	pin := os.Getenv("KEYCARD_TEST_PIN")
 	if pin == "" {
-		pin = "123456"
+		pin = defaultTestPIN
 	}
 
 	ch := newTestChannel(t)
@@ -870,7 +872,7 @@ func TestIntegrationECDFlow(t *testing.T) {
 func TestIntegrationLEEFlow(t *testing.T) {
 	pin := os.Getenv("KEYCARD_TEST_PIN")
 	if pin == "" {
-		pin = "000000"
+		pin = defaultTestPIN
 	}
 
 	ch := newTestChannel(t)
