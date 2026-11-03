@@ -192,7 +192,7 @@ func (r *BerTlvReader) ReadPrimitive(tag uint8) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if r.pos+int(length) > len(r.buffer) {
+	if !r.has(uint64(length)) {
 		return nil, fmt.Errorf("not enough data for value: need %d bytes, have %d", length, len(r.buffer)-r.pos)
 	}
 	value := r.buffer[r.pos : r.pos+int(length)]
@@ -212,11 +212,17 @@ func (r *BerTlvReader) ReadPrimitiveIfPresent(tag uint8) ([]byte, error) {
 
 // Skip advances past the current TLV (tag already consumed, length just read).
 func (r *BerTlvReader) Skip(length uint32) error {
-	if r.pos+int(length) > len(r.buffer) {
+	if !r.has(uint64(length)) {
 		return fmt.Errorf("not enough data to skip: need %d bytes, have %d", length, len(r.buffer)-r.pos)
 	}
 	r.pos += int(length)
 	return nil
+}
+
+// has reports whether length bytes remain unread. uint64: on a 32-bit build a
+// wire-supplied uint32 length turns negative when converted to int.
+func (r *BerTlvReader) has(length uint64) bool {
+	return uint64(r.pos)+length <= uint64(len(r.buffer))
 }
 
 // SkipPrimitive reads and discards the next TLV (tag + length + value).

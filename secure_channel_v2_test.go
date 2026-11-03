@@ -637,6 +637,62 @@ func TestParseDERSignature_ShortValues(t *testing.T) {
 	assert.Equal(t, byte(0x99), sOut[31])
 }
 
+func derSeq(body ...byte) []byte {
+	return append([]byte{0x30, byte(len(body))}, body...)
+}
+
+// Regression: each of these was indexed out of range, or accepted, at HEAD.
+func TestParseDERSignature_MalformedNoPanic(t *testing.T) {
+	tests := map[string][]byte{
+		"empty":                  nil,
+		"tag_only":               {0x30},
+		"sequence_tag_mismatch":  {0x02, 0x06, 0x02, 0x01, 0x42, 0x02, 0x01, 0x99},
+		"s_tag_is_last_byte":     derSeq(0x02, 0x03, 0xAA, 0xBB, 0xCC, 0x02),
+		"s_length_is_last_byte":  derSeq(0x02, 0x02, 0xAA, 0xBB, 0x02, 0x01),
+		"s_body_missing":         derSeq(0x02, 0x01, 0x42, 0x02, 0x05, 0x99),
+		"r_wider_than_scalar":    derSeq(append([]byte{0x02, 0x40}, bytes.Repeat([]byte{0x11}, 64)...)...),
+		"r_wider_with_sign_byte": derSeq(append([]byte{0x02, 0x21, 0x00}, bytes.Repeat([]byte{0x11}, 32)...)...),
+		"s_wider_than_scalar":    derSeq(append([]byte{0x02, 0x01, 0x42, 0x02, 0x21}, bytes.Repeat([]byte{0x11}, 33)...)...),
+		"r_is_zero":              derSeq(0x02, 0x01, 0x00, 0x02, 0x01, 0x42),
+		"r_is_empty":             derSeq(0x02, 0x00, 0x02, 0x01, 0x42),
+		"sequence_claims_more":   {0x30, 0x40, 0x02, 0x01, 0x42, 0x02, 0x01, 0x99},
+		"sequence_huge_length":   {0x30, 0x84, 0xFF, 0xFF, 0xFF, 0xFF, 0x02, 0x01, 0x42},
+		"sequence_indefinite":    {0x30, 0x80, 0x02, 0x01, 0x42, 0x02, 0x01, 0x99},
+		"s_outside_sequence":     {0x30, 0x04, 0x02, 0x01, 0x42, 0x02, 0x01, 0x99},
+		"no_s":                   derSeq(0x02, 0x01, 0x42),
+	}
+
+	for name, der := range tests {
+		t.Run(name, func(t *testing.T) {
+			r, s, err := parseDERSignature(der)
+			assert.Error(t, err)
+			assert.Nil(t, r)
+			assert.Nil(t, s)
+		})
+	}
+}
+
+func FuzzParseDERSignature(f *testing.F) {
+	seeds := [][]byte{
+		derSeq(0x02, 0x01, 0x42, 0x02, 0x01, 0x99),
+		{0x30, 0x81, 0x06, 0x02, 0x01, 0x42, 0x02, 0x01, 0x99},
+		{0x30, 0x44, 0x02, 0x20, 0x00, 0x02, 0x20, 0x00},
+	}
+	for _, seed := range seeds {
+		f.Add(seed)
+	}
+
+	f.Fuzz(func(t *testing.T, der []byte) {
+		r, s, err := parseDERSignature(der)
+		if err != nil {
+			return
+		}
+		if len(r) != scV2ScalarSize || len(s) != scV2ScalarSize {
+			t.Fatalf("accepted %x as a signature but returned %d/%d byte scalars", der, len(r), len(s))
+		}
+	})
+}
+
 // ============================================================================
 // encryptCCM / decryptCCM tests
 // ============================================================================

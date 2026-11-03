@@ -12,6 +12,7 @@ import (
 	"github.com/keycard-tech/keycard-go/v4/apdu"
 	"github.com/keycard-tech/keycard-go/v4/crypto"
 	"github.com/keycard-tech/keycard-go/v4/globalplatform"
+	"github.com/keycard-tech/keycard-go/v4/tlv"
 	"github.com/keycard-tech/keycard-go/v4/types"
 )
 
@@ -23,6 +24,7 @@ const (
 	scV2ProtocolLabel  = "sc_v2_ccm"
 	scV2HKDFSaltSize   = 32
 	scV2PubkeySize     = 65 // uncompressed secp256k1
+	scV2ScalarSize     = 32 // r or s of a secp256k1 signature
 	scV2OKMSize        = 32
 	scV2AESKeySize     = 16
 	scV2CCMNonceSize   = 13
@@ -426,63 +428,56 @@ func verifySignatureByRecovery(hash, derSig []byte, expectedPub *ecdsa.PublicKey
 	return nil, errors.New("signature verification failed: no recovery ID produced matching key")
 }
 
-// parseDERSignature extracts r and s from a DER-encoded ECDSA signature.
+// parseDERSignature extracts r and s from a DER-encoded ECDSA signature as
+// fixed-width big-endian values. derSig is untrusted: the card sends it before
+// proving its identity.
 func parseDERSignature(derSig []byte) ([]byte, []byte, error) {
-	if len(derSig) < 8 || derSig[0] != 0x30 {
+	rd := tlv.NewBerTlvReader(derSig)
+	if !rd.NextTagIs(tlv.TLV_ECDSA_TEMPLATE) {
 		return nil, nil, errors.New("invalid DER signature: not a SEQUENCE")
 	}
-
-	// Parse SEQUENCE length
-	seqLen := int(derSig[1])
-	if seqLen == 0x81 {
-		seqLen = int(derSig[2])
-		derSig = derSig[1:] // skip the length encoding byte
+	seqLen, err := rd.EnterConstructed(tlv.TLV_ECDSA_TEMPLATE)
+	if err != nil {
+		return nil, nil, fmt.Errorf("invalid DER signature: truncated: %w", err)
 	}
-
-	if len(derSig) < seqLen+2 {
+	content := rd.PeekUnread()
+	if uint64(seqLen) > uint64(len(content)) {
 		return nil, nil, errors.New("invalid DER signature: truncated")
 	}
+	inner := tlv.NewBerTlvReader(content[:int(seqLen)])
 
-	// Parse R (INTEGER)
-	if derSig[2] != 0x02 {
-		return nil, nil, errors.New("invalid DER signature: R is not an INTEGER")
+	rRaw, err := inner.ReadPrimitive(tlv.TLV_INT)
+	if err != nil {
+		return nil, nil, fmt.Errorf("invalid DER signature: R is not an INTEGER: %w", err)
 	}
-	rLen := int(derSig[3])
-	rOffset := 4
-	// Handle leading zero byte in R (sign byte for positive integers)
-	if rLen > 0 && derSig[rOffset] == 0x00 {
-		rOffset++
-		rLen--
+	sRaw, err := inner.ReadPrimitive(tlv.TLV_INT)
+	if err != nil {
+		return nil, nil, fmt.Errorf("invalid DER signature: S is not an INTEGER: %w", err)
 	}
-	if rLen <= 0 || rOffset+rLen > len(derSig) {
-		return nil, nil, errors.New("invalid DER signature: bad R length")
-	}
-	r := derSig[rOffset : rOffset+rLen]
 
-	// Parse S (INTEGER)
-	sTagOffset := rOffset + rLen
-	if sTagOffset >= len(derSig) || derSig[sTagOffset] != 0x02 {
-		return nil, nil, errors.New("invalid DER signature: S is not an INTEGER")
+	r, err := scalarFromDERInteger(rRaw, "R")
+	if err != nil {
+		return nil, nil, err
 	}
-	sLen := int(derSig[sTagOffset+1])
-	sOffset := sTagOffset + 2
-	// Handle leading zero byte in S
-	if sLen > 0 && derSig[sOffset] == 0x00 {
-		sOffset++
-		sLen--
+	s, err := scalarFromDERInteger(sRaw, "S")
+	if err != nil {
+		return nil, nil, err
 	}
-	if sLen <= 0 || sOffset+sLen > len(derSig) {
-		return nil, nil, errors.New("invalid DER signature: bad S length")
-	}
-	s := derSig[sOffset : sOffset+sLen]
 
-	// Normalize to 32 bytes (left-pad with zeros)
-	rPadded := make([]byte, 32)
-	copy(rPadded[32-len(r):], r)
-	sPadded := make([]byte, 32)
-	copy(sPadded[32-len(s):], s)
+	return r, s, nil
+}
 
-	return rPadded, sPadded, nil
+// scalarFromDERInteger converts DER INTEGER content octets to a fixed-width
+// big-endian scalar.
+func scalarFromDERInteger(content []byte, name string) ([]byte, error) {
+	content = bytes.TrimPrefix(content, []byte{0x00}) // DER sign byte
+	if len(content) == 0 || len(content) > scV2ScalarSize {
+		return nil, fmt.Errorf("invalid DER signature: bad %s length", name)
+	}
+
+	out := make([]byte, scV2ScalarSize)
+	copy(out[scV2ScalarSize-len(content):], content)
+	return out, nil
 }
 
 // encryptCCM encrypts plaintext with AES-128-CCM using the client-to-card key.
