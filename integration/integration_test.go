@@ -677,10 +677,15 @@ func TestIntegrationBIP341TaprootSchnorr(t *testing.T) {
 		0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
 	}
 
-	// Compute P' = P + customTweak*G using PrivKeyFromBytes + curve Add
+	evenInternalKey, err := schnorr.ParsePubKey(internalXOnly)
+	if err != nil {
+		t.Fatalf("failed to lift internal key to even y: %v", err)
+	}
+
+	// Compute P' = even(P) + customTweak*G
 	_, customTweakPubKey := btcec.PrivKeyFromBytes(customTweak[:])
 	customTweakedX, customTweakedY := btcec.S256().Add(
-		internalKey.X(), internalKey.Y(),
+		evenInternalKey.X(), evenInternalKey.Y(),
 		customTweakPubKey.X(), customTweakPubKey.Y(),
 	)
 	// Check for point at infinity
@@ -690,11 +695,10 @@ func TestIntegrationBIP341TaprootSchnorr(t *testing.T) {
 
 	// Convert *big.Int to FieldVal for NewPublicKey
 	var tweakedXField, tweakedYField btcec.FieldVal
-	// big.Int.Bytes() returns big-endian; pad to 32 bytes
-	xBytes := customTweakedX.Bytes()
-	yBytes := customTweakedY.Bytes()
-	tweakedXField.SetByteSlice(paddingBytes(xBytes))
-	tweakedYField.SetByteSlice(paddingBytes(yBytes))
+	if tweakedXField.SetByteSlice(paddingBytes(customTweakedX.Bytes())) ||
+		tweakedYField.SetByteSlice(paddingBytes(customTweakedY.Bytes())) {
+		t.Fatal("tweaked key coordinates overflow the field prime")
+	}
 	customTweakedKey := btcec.NewPublicKey(&tweakedXField, &tweakedYField)
 
 	customSig, err := kc.SignBIP341Schnorr(hash[:], customTweak[:], path)
