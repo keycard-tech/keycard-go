@@ -3,6 +3,7 @@ package globalplatform
 import (
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"os"
 
 	"github.com/keycard-tech/keycard-go/v4/apdu"
@@ -15,15 +16,47 @@ var ErrSecureChannelNotOpen = errors.New("secure channel not open")
 type LoadingCallback = func(loadingBlock, totalBlocks int)
 
 type CommandSet struct {
-	c       types.Channel
-	sc      *SecureChannel
-	session *Session
+	c             types.Channel
+	sc            *SecureChannel
+	session       *Session
+	keySets       []KeySet
+	securityLevel SecurityLevel
 }
 
-func NewCommandSet(c types.Channel) *CommandSet {
-	return &CommandSet{
-		c: c,
+// Option configures how a CommandSet opens its secure channel.
+type Option func(*CommandSet)
+
+// WithKeySets sets the key sets to offer the card when opening a secure channel, tried
+// in order. The card may block a Security Domain after repeated authentication failures,
+// so keep the list as short as the cards allow.
+func WithKeySets(keySets ...KeySet) Option {
+	return func(cs *CommandSet) {
+		cs.keySets = keySets
 	}
+}
+
+// WithSecurityLevel sets the secure messaging level of SCP03 sessions, LevelCMAC by
+// default. Levels including R-MAC or R-ENCRYPTION require a card advertising them.
+func WithSecurityLevel(level SecurityLevel) Option {
+	return func(cs *CommandSet) {
+		cs.securityLevel = level
+	}
+}
+
+// NewCommandSet returns a CommandSet sending on channel c, which tries the public
+// development key sets of DefaultKeySets unless WithKeySets says otherwise.
+func NewCommandSet(c types.Channel, options ...Option) *CommandSet {
+	cs := &CommandSet{
+		c:             c,
+		keySets:       DefaultKeySets(),
+		securityLevel: DefaultSecurityLevel,
+	}
+
+	for _, option := range options {
+		option(cs)
+	}
+
+	return cs
 }
 
 func (cs *CommandSet) Select() error {
@@ -38,18 +71,98 @@ func (cs *CommandSet) SelectAID(aid []byte) error {
 	return apdu.CheckOK(resp, err)
 }
 
+// OpenSecureChannel negotiates a secure channel with the Security Domain: it sends an
+// INITIALIZE UPDATE per key set until one of them yields a valid card cryptogram, then
+// authenticates the host. The protocol is the one the card reports, so SCP02 and SCP03
+// cards are handled by the same call.
 func (cs *CommandSet) OpenSecureChannel() error {
-	hostChallenge, err := generateHostChallenge()
-	if err != nil {
-		return err
+	var lastErr error
+
+	for _, keySet := range cs.keySets {
+		session, err := cs.negotiate(keySet)
+		if err != nil {
+			if !isKeySetError(err) {
+				return err
+			}
+
+			logger.Debug("key set rejected", "scp", keySet.Protocol(), "version", keySet.Version(), "error", err)
+			lastErr = err
+
+			continue
+		}
+
+		cs.session = session
+
+		break
 	}
 
-	err = cs.initializeUpdate(hostChallenge)
-	if err != nil {
-		return err
+	if cs.session == nil {
+		if lastErr == nil {
+			return errors.New("no key set configured")
+		}
+
+		return fmt.Errorf("no key set accepted by the card: %w", lastErr)
 	}
 
 	return cs.externalAuthenticate()
+}
+
+// negotiate sends an INITIALIZE UPDATE and validates the returned card cryptogram,
+// leaving a secure channel ready to authenticate the host when the keys match.
+func (cs *CommandSet) negotiate(keySet KeySet) (*Session, error) {
+	// A SCP03 card configured for S16 mode rejects an 8 byte host challenge with '6700'.
+	challengeLengths := []int{8}
+	if keySet.Protocol() == SCPVersion03 {
+		challengeLengths = append(challengeLengths, 16)
+	}
+
+	var lastErr error
+
+	for _, length := range challengeLengths {
+		hostChallenge, err := generateHostChallenge(length)
+		if err != nil {
+			return nil, err
+		}
+
+		cmd := NewCommandInitializeUpdate(hostChallenge, keySet.Version())
+		resp, err := cs.c.Send(cmd)
+		if err != nil {
+			return nil, err
+		}
+
+		if resp.Sw == SwWrongLength {
+			lastErr = apdu.NewErrBadResponse(resp.Sw, "host challenge length rejected")
+
+			continue
+		}
+
+		if err = apdu.CheckOK(resp, err); err != nil {
+			return nil, err
+		}
+
+		session, err := NewSession(keySet, resp, hostChallenge, cs.securityLevel)
+		if err != nil {
+			if !isKeySetError(err) {
+				return nil, err
+			}
+
+			// The card accepted the challenge, so asking again with another length would
+			// only burn authentication attempts on this Security Domain.
+			lastErr = err
+
+			break
+		}
+
+		if cs.sc, err = NewSecureChannel(session, cs.c); err != nil {
+			return nil, err
+		}
+
+		logger.Debug("secure channel negotiated", "scp", session.Protocol(), "version", session.KeyVersion())
+
+		return session, nil
+	}
+
+	return nil, lastErr
 }
 
 func (cs *CommandSet) DeleteKeycardInstancesAndPackage() error {
@@ -89,7 +202,7 @@ func (cs *CommandSet) LoadPackage(capFile *os.File, pkgAID []byte, callback Load
 		return err
 	}
 
-	load, err := NewLoadCommandStream(capFile)
+	load, err := NewLoadCommandStream(capFile, cs.sc.MaxCommandData())
 	if err != nil {
 		return err
 	}
@@ -167,54 +280,9 @@ func (cs *CommandSet) SecureChannel() *SecureChannel {
 	return cs.sc
 }
 
-func (cs *CommandSet) initializeUpdate(hostChallenge []byte) error {
-	cmd := NewCommandInitializeUpdate(hostChallenge)
-	resp, err := cs.c.Send(cmd)
-	if err = apdu.CheckOK(resp, err); err != nil {
-		return err
-	}
-
-	// verify cryptogram and initialize session keys
-	session, err := cs.initializeSession(resp, hostChallenge)
-	if err != nil {
-		return err
-	}
-
-	cs.sc = NewSecureChannel(session, cs.c)
-	cs.session = session
-
-	return nil
-}
-
-func (cs *CommandSet) initializeSession(resp *apdu.Response, hostChallenge []byte) (session *Session, err error) {
-	keySets := []struct {
-		name string
-		key  []byte
-	}{
-		{"keycard", identifiers.KeycardDevelopmentKey},
-		{"globalplatform", identifiers.GlobalPlatformDefaultKey},
-	}
-
-	for _, set := range keySets {
-		logger.Debug("initialize session", "keys", set.name)
-		keys := NewSCP02Keys(set.key, set.key)
-		session, err = NewSession(keys, resp, hostChallenge)
-
-		// good keys
-		if err == nil {
-			break
-		}
-
-		// try the next keys
-		if err == errBadCryptogram {
-			continue
-		}
-
-		// unexpected error
-		return nil, err
-	}
-
-	return session, err
+// Session returns the session of the open secure channel, nil when none is open.
+func (cs *CommandSet) Session() *Session {
+	return cs.session
 }
 
 func (cs *CommandSet) externalAuthenticate() error {
@@ -222,18 +290,28 @@ func (cs *CommandSet) externalAuthenticate() error {
 		return errors.New("session must be initialized using initializeUpdate")
 	}
 
-	encKey := cs.session.Keys().Enc()
-	cmd, err := NewCommandExternalAuthenticate(encKey, cs.session.CardChallenge(), cs.session.HostChallenge())
+	resp, err := cs.sc.SendAuthenticate(cs.session.ExternalAuthenticate())
 	if err != nil {
 		return err
 	}
 
-	resp, err := cs.sc.Send(cmd)
 	return apdu.CheckOK(resp, err)
 }
 
-func generateHostChallenge() ([]byte, error) {
-	c := make([]byte, 8)
+// isKeySetError reports whether an error means the card does not use this key set, so
+// that the next one can be offered.
+func isKeySetError(err error) bool {
+	var badResponse *apdu.ErrBadResponse
+	if errors.As(err, &badResponse) {
+		return badResponse.Sw == SwReferencedDataNotFound
+	}
+
+	return errors.Is(err, errBadCryptogram)
+}
+
+func generateHostChallenge(length int) ([]byte, error) {
+	c := make([]byte, length)
 	_, err := rand.Read(c)
+
 	return c, err
 }

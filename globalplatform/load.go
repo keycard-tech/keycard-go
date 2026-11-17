@@ -3,6 +3,7 @@ package globalplatform
 import (
 	"archive/zip"
 	"bytes"
+	"fmt"
 	"io/ioutil"
 	"math"
 	"os"
@@ -16,19 +17,24 @@ var internalFiles = []string{
 	"Method", "StaticField", "Export", "ConstantPool", "RefLocation",
 }
 
-const blockSize = 247 // 255 - 8 bytes for MAC
-
 // LoadCommandStream implement a struct that generates multiple Load commands used to load files to smartcards.
 type LoadCommandStream struct {
 	data         *bytes.Reader
+	blockSize    int
 	currentIndex uint8
 	currentData  []byte
 	p1           uint8
 	blocksCount  int
 }
 
-// NewLoadCommandStream returns a new LoadCommandStream to load the specified file.
-func NewLoadCommandStream(file *os.File) (*LoadCommandStream, error) {
+// NewLoadCommandStream returns a new LoadCommandStream loading the specified file in
+// blocks of blockSize bytes. blockSize is the maximum command data the channel the file
+// is loaded over accepts, that is SecureChannel.MaxCommandData.
+func NewLoadCommandStream(file *os.File, blockSize int) (*LoadCommandStream, error) {
+	if blockSize <= 0 || blockSize > 255 {
+		return nil, fmt.Errorf("block size must be between 1 and 255, got %d", blockSize)
+	}
+
 	files, err := loadFiles(file)
 	if err != nil {
 		return nil, err
@@ -41,6 +47,7 @@ func NewLoadCommandStream(file *os.File) (*LoadCommandStream, error) {
 
 	return &LoadCommandStream{
 		data:        bytes.NewReader(data),
+		blockSize:   blockSize,
 		p1:          P1LoadMoreBlocks,
 		blocksCount: int(math.Ceil(float64(len(data)) / float64(blockSize))),
 	}, nil
@@ -52,13 +59,12 @@ func (lcs *LoadCommandStream) BlocksCount() int {
 }
 
 // Next returns initialize the data for the next Load command.
-// TODO:@gravityblast update blockSize when using encrypted data
 func (lcs *LoadCommandStream) Next() bool {
 	if lcs.data.Len() == 0 {
 		return false
 	}
 
-	buf := make([]byte, blockSize)
+	buf := make([]byte, lcs.blockSize)
 	n, err := lcs.data.Read(buf)
 	if err != nil {
 		return false

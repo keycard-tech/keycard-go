@@ -5,6 +5,7 @@ import (
 
 	"github.com/keycard-tech/keycard-go/v4/hexutils"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewCommandSelect(t *testing.T) {
@@ -19,13 +20,23 @@ func TestNewCommandSelect(t *testing.T) {
 
 func TestNewCommandInitializeUpdate(t *testing.T) {
 	challenge := hexutils.MustHexToBytes("010203")
-	cmd := NewCommandInitializeUpdate(challenge)
+	cmd := NewCommandInitializeUpdate(challenge, 0)
 
 	assert.Equal(t, uint8(0x80), cmd.Cla)
 	assert.Equal(t, uint8(0x50), cmd.Ins)
 	assert.Equal(t, uint8(0x00), cmd.P1)
 	assert.Equal(t, uint8(0x00), cmd.P2)
 	assert.Equal(t, challenge, cmd.Data)
+}
+
+func TestNewCommandInitializeUpdate_KeyVersion(t *testing.T) {
+	cmd := NewCommandInitializeUpdate(make([]byte, 8), 0x30)
+
+	assert.Equal(t, uint8(0x30), cmd.P1)
+
+	raw, err := cmd.Serialize()
+	require.NoError(t, err)
+	assert.Equal(t, "8050300008000000000000000000", hexutils.BytesToHex(raw))
 }
 
 func TestCalculateHostCryptogram(t *testing.T) {

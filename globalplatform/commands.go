@@ -39,6 +39,7 @@ const (
 
 	SwOK                            = 0x9000
 	SwFileNotFound                  = 0x6A82
+	SwWrongLength                   = 0x6700
 	SwReferencedDataNotFound        = 0x6A88
 	SwSecurityConditionNotSatisfied = 0x6982
 	SwAuthenticationMethodBlocked   = 0x6983
@@ -61,12 +62,14 @@ func NewCommandSelect(aid []byte) *apdu.Command {
 	return c
 }
 
-// NewCommandInitializeUpdate returns an Initialize Update command as defined in the globalplatform specifications.
-func NewCommandInitializeUpdate(challenge []byte) *apdu.Command {
+// NewCommandInitializeUpdate returns an Initialize Update command as defined by the
+// globalplatform specifications. keyVersion selects the key set of the Security Domain;
+// 0 lets the card use its first available key set and is the only value SCP02 accepts.
+func NewCommandInitializeUpdate(challenge []byte, keyVersion byte) *apdu.Command {
 	c := apdu.NewCommand(
 		ClaGp,
 		InsInitializeUpdate,
-		0,
+		keyVersion,
 		0,
 		challenge,
 	)
@@ -78,20 +81,39 @@ func NewCommandInitializeUpdate(challenge []byte) *apdu.Command {
 	return c
 }
 
-// NewCommandExternalAuthenticate returns an External Authenticate command as defined in the globalplatform specifications.
-func NewCommandExternalAuthenticate(encKey, cardChallenge, hostChallenge []byte) (*apdu.Command, error) {
-	hostCryptogram, err := calculateHostCryptogram(encKey, cardChallenge, hostChallenge)
-	if err != nil {
-		return nil, err
-	}
-
+// NewCommandExternalAuthenticateSCP02 returns an External Authenticate command carrying
+// the host cryptogram calculated from the session keys of a SCP02 session.
+func NewCommandExternalAuthenticateSCP02(hostCryptogram []byte) *apdu.Command {
 	return apdu.NewCommand(
 		ClaMac,
 		InsExternalAuthenticate,
 		P1ExternalAuthenticateCMAC,
 		0,
 		hostCryptogram,
-	), nil
+	)
+}
+
+// NewCommandExternalAuthenticateSCP03 returns an External Authenticate command whose P1
+// sets the security level of the rest of the session.
+func NewCommandExternalAuthenticateSCP03(level SecurityLevel, hostCryptogram []byte) *apdu.Command {
+	return apdu.NewCommand(
+		ClaMac,
+		InsExternalAuthenticate,
+		uint8(level),
+		0,
+		hostCryptogram,
+	)
+}
+
+// NewCommandExternalAuthenticate returns the SCP02 External Authenticate command
+// calculated from the session keys and the challenges of the session.
+func NewCommandExternalAuthenticate(encKey, cardChallenge, hostChallenge []byte) (*apdu.Command, error) {
+	hostCryptogram, err := calculateHostCryptogram(encKey, cardChallenge, hostChallenge)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewCommandExternalAuthenticateSCP02(hostCryptogram), nil
 }
 
 // NewCommandGetResponse returns a Get Response command as defined in the globalplatform specifications.

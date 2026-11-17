@@ -9,7 +9,7 @@ If you only need a CLI tool to initialize your card, check out [keycard-cli](htt
 | Package | Description |
 |---|---|
 | `keycard` | Main API — `CommandSet` for card operations, secure channel, pairing |
-| `keycard/globalplatform` | GlobalPlatform commands — applet installation, SCP02 secure channel |
+| `keycard/globalplatform` | GlobalPlatform commands — applet installation, SCP02 and SCP03 secure channel |
 | `keycard/apdu` | APDU command/response types and encoding |
 | `keycard/crypto` | Cryptographic utilities (ECDH, AES-CCM, HMAC, PBKDF2, zeroization) |
 | `keycard/derivationpath` | BIP32 derivation path parsing and encoding |
@@ -100,14 +100,49 @@ Data type constants: `P1StoreDataPublic`, `P1StoreDataNDEF`, `P1StoreDataCash`.
 | Command | Method(s) |
 |---|---|
 | SELECT | `globalplatform.NewCommandSelect(aid)` |
-| INITIALIZE UPDATE | `globalplatform.NewCommandInitializeUpdate(challenge)` |
-| EXTERNAL AUTHENTICATE | `globalplatform.NewCommandExternalAuthenticate(...)` |
+| INITIALIZE UPDATE | `globalplatform.NewCommandInitializeUpdate(challenge, keyVersion)` |
+| EXTERNAL AUTHENTICATE | `globalplatform.NewCommandExternalAuthenticateSCP02(hostCryptogram)`, `globalplatform.NewCommandExternalAuthenticateSCP03(level, hostCryptogram)` |
 | GET RESPONSE | `globalplatform.NewCommandGetResponse(length)` |
 | DELETE | `globalplatform.NewCommandDelete(aid, p2)` |
 | INSTALL FOR LOAD | `globalplatform.NewCommandInstallForLoad(aid, sdaid)` |
 | INSTALL FOR INSTALL | `globalplatform.NewCommandInstallForInstall(pkgAID, appletAID, instanceAID, params)` |
-| SCP02 Secure Channel | `globalplatform.SCP02Wrapper`, `globalplatform.SecureChannel` |
-| Applet Loading | `globalplatform.NewLoadCommandStream(file)` |
+| Secure messaging | `globalplatform.SCP02Wrapper`, `globalplatform.SCP03Wrapper`, `globalplatform.SecureChannel` |
+| Applet Loading | `globalplatform.NewLoadCommandStream(file, blockSize)` |
+
+### Secure Channel Session
+
+```go
+cmdSet := globalplatform.NewCommandSet(channel,
+	globalplatform.WithKeySets(globalplatform.NewSCP03KeySet(0x01, enc, mac, dek)),
+	globalplatform.WithSecurityLevel(globalplatform.LevelCDECMAC))
+
+cmdSet.Select()
+cmdSet.OpenSecureChannel()
+cmdSet.LoadKeycardPackage(capFile, progress)
+cmdSet.InstallKeycardApplet()
+```
+
+`OpenSecureChannel` sends an INITIALIZE UPDATE per key set, in order, and keeps the one
+whose card cryptogram verifies; `DefaultKeySets()` holds the public development keys used
+when no `WithKeySets` is given. The protocol is the one the card reports in its response,
+so SCP02 and SCP03 cards need no configuration difference.
+
+| Level | Commands | Responses |
+|---|---|---|
+| `LevelCMAC` (default) | MAC | — |
+| `LevelCDECMAC` | encrypted + MAC | — |
+| `LevelCMACRMAC` | MAC | MAC |
+| `LevelCDECMACRMAC` | encrypted + MAC | MAC |
+| `LevelFull` | encrypted + MAC | encrypted + MAC |
+
+Levels with R-MAC need a card whose `i` parameter advertises it, and are rejected before
+EXTERNAL AUTHENTICATE otherwise. `SecureChannel.MaxCommandData` gives the largest command
+body the level leaves available, which is what `NewLoadCommandStream` sizes its blocks
+with.
+
+A card answering a response-protected command with `61xx` is continued by an
+unauthenticated GET RESPONSE on the underlying channel, so R-MAC levels only work where
+the card MACs the GET RESPONSE output as well.
 
 ## Cash Application
 
